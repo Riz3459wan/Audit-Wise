@@ -76,5 +76,43 @@ export const useAuth = () => {
     checkAuth();
   }, [checkAuth]);
 
-  return { user, loading, login, logout, isAuthenticated: !!user };
+
+  //added this method for changing the users new plan
+  const updateUserPlan = useCallback(async (newPlan) => {
+    if (!user) {
+      return { success: false, error: "No user logged in" };
+    }
+
+    try {
+
+      await db.users.update(user.id, {
+        plan: newPlan,
+        planUpdatedAt: Date.now(),
+      });
+
+
+      const updatedUser = await db.users.get(user.id);
+      
+      setUser(updatedUser);
+      const currentSession = tabSession.get();
+      if (currentSession) {
+        tabSession.set({
+          ...currentSession,
+          plan: newPlan,
+        });
+      }
+      await dbHelpers.logAudit(user.id, "PLAN_UPDATED", {
+        oldPlan: user.plan,
+        newPlan: newPlan,
+      });
+
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }, [user]);
+
+  return { user, loading, login, logout, isAuthenticated: !!user, updateUserPlan };
 };
+
+
