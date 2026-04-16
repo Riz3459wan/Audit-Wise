@@ -14,9 +14,16 @@ const PaymentSuccess = () => {
   const purchasedPlan = location.state?.plan;
 
   useEffect(() => {
-    if (purchasedPlan) {
-      updateUserPlan(purchasedPlan.planType);
-    }
+    const updatePlan = async () => {
+      if (purchasedPlan) {
+        await updateUserPlan(purchasedPlan.planType);
+        setTimeout(() => {
+          window.location.reload();
+        }, 5000);
+      }
+    };
+
+    updatePlan();
   }, [purchasedPlan, updateUserPlan]);
 
   const handleGoToDashboard = () => {

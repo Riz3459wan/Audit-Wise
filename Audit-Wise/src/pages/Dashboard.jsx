@@ -6,17 +6,24 @@ import {
   CardContent,
   Typography,
   CircularProgress,
+  Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
 } from "@mui/material";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import AssessmentIcon from "@mui/icons-material/Assessment";
+import AddCircleIcon from "@mui/icons-material/AddCircle";
 import { usePreventBack } from "../hooks/usePreventBack";
 import { useAuth } from "../hooks/useAuth";
-import { db } from "../database/db";
+import { db, PLAN_LIMITS } from "../database/db";
 
 const Dashboard = () => {
   usePreventBack();
-  const { user } = useAuth();
+  const { user, addExtraUploads } = useAuth();
   const [stats, setStats] = useState({
     totalUploads: 0,
     totalReports: 0,
@@ -24,6 +31,9 @@ const Dashboard = () => {
     loading: true,
     error: null,
   });
+  const [extraDialogOpen, setExtraDialogOpen] = useState(false);
+  const [extraCount, setExtraCount] = useState(10);
+  const [addingExtra, setAddingExtra] = useState(false);
 
   useEffect(() => {
     const loadStats = async () => {
@@ -67,16 +77,13 @@ const Dashboard = () => {
     loadStats();
   }, [user]);
 
-  const planLimits = {
-    free: 5,
-    pro: 50,
-    business: 200,
-  };
-
   const currentPlan = user?.plan || "free";
+  const extraUploads = user?.extraUploads || 0;
+  const baseLimit = PLAN_LIMITS[currentPlan] || 5;
+  const totalLimit = baseLimit + extraUploads;
   const remainingUploads = Math.max(
     0,
-    (planLimits[currentPlan] || 5) - stats.totalUploadsThisMonth,
+    totalLimit - stats.totalUploadsThisMonth,
   );
 
   const statCards = [
@@ -99,6 +106,20 @@ const Dashboard = () => {
       color: remainingUploads <= 2 ? "#f59e0b" : "#10b981",
     },
   ];
+
+  const handleAddExtraUploads = async () => {
+    setAddingExtra(true);
+    const price = extraCount * 50;
+    const result = await addExtraUploads(extraCount, price);
+    if (result.success) {
+      setExtraDialogOpen(false);
+      setExtraCount(10);
+      window.location.reload();
+    } else {
+      alert("Failed to add extra uploads");
+    }
+    setAddingExtra(false);
+  };
 
   if (stats.loading) {
     return (
@@ -129,8 +150,8 @@ const Dashboard = () => {
         Welcome back, {user?.name?.split(" ")[0] || "User"}!
       </Typography>
       <Typography variant="body2" color="textSecondary" mb={3}>
-        {stats.totalUploadsThisMonth} uploads this month •{" "}
-        {planLimits[currentPlan]} - {stats.totalUploadsThisMonth} remaining
+        {stats.totalUploadsThisMonth} uploads this month • {totalLimit} total
+        limit ({baseLimit} base + {extraUploads} extra)
       </Typography>
 
       <Grid container spacing={3}>
@@ -164,15 +185,66 @@ const Dashboard = () => {
       </Grid>
 
       <Box mt={4}>
-        <Typography variant="h6" mb={2}>
-          Recent Activity
-        </Typography>
+        <Box
+          sx={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            mb: 2,
+          }}
+        >
+          <Typography variant="h6">Recent Activity</Typography>
+          {currentPlan !== "free" && (
+            <Button
+              variant="contained"
+              startIcon={<AddCircleIcon />}
+              onClick={() => setExtraDialogOpen(true)}
+              sx={{ background: "linear-gradient(90deg, #10b981, #059669)" }}
+            >
+              Buy Extra Uploads
+            </Button>
+          )}
+        </Box>
         <Card sx={{ borderRadius: "15px", p: 2 }}>
           <Typography color="textSecondary">
             Your recent uploads and reports will appear here...
           </Typography>
         </Card>
       </Box>
+
+      <Dialog open={extraDialogOpen} onClose={() => setExtraDialogOpen(false)}>
+        <DialogTitle>Purchase Extra Uploads</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+            Each extra upload costs ₹50. These will be added to your current
+            monthly limit.
+          </Typography>
+          <TextField
+            fullWidth
+            type="number"
+            label="Number of Extra Uploads"
+            value={extraCount}
+            onChange={(e) =>
+              setExtraCount(Math.max(1, parseInt(e.target.value) || 0))
+            }
+            InputProps={{ inputProps: { min: 1, max: 100 } }}
+          />
+          <Typography variant="h6" sx={{ mt: 2 }}>
+            Total: ₹{extraCount * 50}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setExtraDialogOpen(false)}>Cancel</Button>
+          <Button
+            onClick={handleAddExtraUploads}
+            disabled={addingExtra}
+            variant="contained"
+            color="primary"
+          >
+            {addingExtra ? <CircularProgress size={24} /> : "Purchase"}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

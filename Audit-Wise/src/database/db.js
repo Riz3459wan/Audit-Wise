@@ -2,9 +2,15 @@ import Dexie from "dexie";
 
 export const db = new Dexie("AuditWiseDB");
 
+export const PLAN_LIMITS = {
+  free: 5,
+  pro: 50,
+  business: 200,
+};
+
 db.version(1).stores({
   users:
-    "++id, email, password, name, avatar, plan, planUpdatedAt, monthlyUploadCount, monthlyResetDate, createdAt, lastLogin, isActive",
+    "++id, email, password, name, avatar, plan, planUpdatedAt, planExpiryDate, monthlyUploadCount, monthlyResetDate, createdAt, lastLogin, isActive, extraUploads",
   auth: "id, isLoggedIn, userId, tabId, lastActive, sessionToken",
   documents:
     "++id, userId, fileName, fileSize, fileType, filePath, status, scannedAt, originalImage, scannedImage, extractedText, confidence",
@@ -17,7 +23,43 @@ db.version(1).stores({
   userSettings:
     "++id, userId, theme, notifications, language, timezone, emailAlerts, twoFactorAuth",
   auditLogs: "++id, userId, action, details, ipAddress, timestamp, documentId",
+  addOns: "++id, userId, extraUploads, purchaseDate, expiryDate, isActive",
 });
+
+db.version(2)
+  .stores({
+    users:
+      "++id, email, password, name, avatar, plan, planUpdatedAt, planExpiryDate, monthlyUploadCount, monthlyResetDate, createdAt, lastLogin, isActive, extraUploads",
+    auth: "id, isLoggedIn, userId, tabId, lastActive, sessionToken",
+    documents:
+      "++id, userId, fileName, fileSize, fileType, filePath, status, scannedAt, originalImage, scannedImage, extractedText, confidence",
+    analyseResult:
+      "++id, documentId, userId, extractedText, confidence, modelUsed, processedAt, language, analysis, sentiment, riskLevel, keyFindings, recommendations, mode, wordCount, charCount, summary",
+    reports:
+      "++id, userId, documentId, reportName, reportType, findings, recommendations, riskScore, generatedAt, format, isShared",
+    subscriptions:
+      "++id, userId, plan, status, startDate, endDate, autoRenew, paymentId, amount",
+    userSettings:
+      "++id, userId, theme, notifications, language, timezone, emailAlerts, twoFactorAuth",
+    auditLogs:
+      "++id, userId, action, details, ipAddress, timestamp, documentId",
+    addOns: "++id, userId, extraUploads, purchaseDate, expiryDate, isActive",
+  })
+  .upgrade(async (trans) => {
+    const users = await trans.table("users").toArray();
+    for (const user of users) {
+      if (!user.extraUploads) {
+        await trans.table("users").update(user.id, { extraUploads: 0 });
+      }
+      if (!user.planExpiryDate && user.plan !== "free") {
+        const expiryDate = new Date();
+        expiryDate.setDate(expiryDate.getDate() + 30);
+        await trans
+          .table("users")
+          .update(user.id, { planExpiryDate: expiryDate.toISOString() });
+      }
+    }
+  });
 
 export const dbHelpers = {
   async createUser(userData) {
@@ -31,6 +73,8 @@ export const dbHelpers = {
       plan: "free",
       monthlyUploadCount: 0,
       monthlyResetDate: firstDayOfMonth.toISOString(),
+      extraUploads: 0,
+      planExpiryDate: null,
     });
     return id;
   },
@@ -43,9 +87,22 @@ export const dbHelpers = {
     const user = await db.users.get(userId);
     if (!user) return 0;
 
-    const lastReset = new Date(user.monthlyResetDate);
     const now = new Date();
 
+    if (user.plan !== "free" && user.planExpiryDate) {
+      const expiryDate = new Date(user.planExpiryDate);
+      if (now > expiryDate) {
+        await db.users.update(userId, {
+          plan: "free",
+          planExpiryDate: null,
+          monthlyUploadCount: 0,
+          extraUploads: 0,
+        });
+        return 0;
+      }
+    }
+
+    const lastReset = new Date(user.monthlyResetDate);
     const lastResetYear = lastReset.getFullYear();
     const lastResetMonth = lastReset.getMonth();
     const currentYear = now.getFullYear();
@@ -69,21 +126,19 @@ export const dbHelpers = {
     await this.checkAndResetMonthlyCount(userId);
     const user = await db.users.get(userId);
     const currentCount = user?.monthlyUploadCount || 0;
-
-    const planLimits = {
-      free: 5,
-      pro: 50,
-      business: 200,
-    };
+    const extraUploads = user?.extraUploads || 0;
 
     const userPlan = user?.plan?.toLowerCase() || "free";
-    const maxUploads = planLimits[userPlan] || 5;
+    const baseLimit = PLAN_LIMITS[userPlan] || 5;
+    const totalLimit = baseLimit + extraUploads;
 
     return {
       used: currentCount,
-      total: maxUploads,
-      remaining: Math.max(0, maxUploads - currentCount),
+      total: totalLimit,
+      remaining: Math.max(0, totalLimit - currentCount),
       plan: userPlan,
+      baseLimit: baseLimit,
+      extraUploads: extraUploads,
     };
   },
 
@@ -105,15 +160,11 @@ export const dbHelpers = {
   },
 
   async saveDocument(userId, documentData) {
-    const currentCount = await this.getCurrentMonthUploadCount(userId);
-    const user = await db.users.get(userId);
-    const planLimits = { free: 5, pro: 50, business: 200 };
-    const userPlan = user?.plan?.toLowerCase() || "free";
-    const maxAllowed = planLimits[userPlan] || 5;
+    const usage = await this.getUserMonthlyUsage(userId);
 
-    if (currentCount >= maxAllowed) {
+    if (usage.used >= usage.total) {
       throw new Error(
-        `Monthly limit of ${maxAllowed} uploads reached for ${userPlan} plan`,
+        `Monthly limit of ${usage.total} uploads reached. ${usage.extraUploads > 0 ? "Purchase extra uploads or upgrade plan." : "Upgrade plan or purchase extra uploads."}`,
       );
     }
 
@@ -129,7 +180,7 @@ export const dbHelpers = {
     await this.logAudit(userId, "DOCUMENT_UPLOAD", {
       documentId: id,
       monthlyCount: newCount,
-      limit: maxAllowed,
+      limit: usage.total,
     });
 
     return id;
@@ -208,6 +259,33 @@ export const dbHelpers = {
       monthlyResetDate: firstDayOfMonth.toISOString(),
     });
     return 0;
+  },
+
+  async addExtraUploads(userId, extraCount, price) {
+    const user = await db.users.get(userId);
+    if (!user) throw new Error("User not found");
+
+    const currentExtra = user.extraUploads || 0;
+    const newExtra = currentExtra + extraCount;
+
+    await db.users.update(userId, { extraUploads: newExtra });
+
+    await db.addOns.add({
+      userId,
+      extraUploads: extraCount,
+      purchaseDate: new Date().toISOString(),
+      expiryDate: null,
+      isActive: true,
+      price: price,
+    });
+
+    await this.logAudit(userId, "EXTRA_UPLOADS_PURCHASED", {
+      extraCount: extraCount,
+      totalExtra: newExtra,
+      price: price,
+    });
+
+    return newExtra;
   },
 };
 
