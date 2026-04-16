@@ -10,6 +10,8 @@ import Pricing from "./pages/Pricing";
 import Settings from "./pages/Settings";
 import Dashboard from "./pages/Dashboard";
 import ProfileSettings from "./pages/ProfileSettings";
+import PaymentConfirmation from "./pages/PaymentConfirmation";
+import PaymentSuccess from "./pages/PaymentSuccess";
 import { tabSession } from "./utils/tabSession";
 
 const PrivateRoute = ({ children }) => {
@@ -39,10 +41,17 @@ const ProtectedLayout = () => {
 
 function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter
+      future={{
+        v7_startTransition: true,
+        v7_relativeSplatPath: true,
+      }}
+    >
       <Routes>
         <Route path="/" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/paymentConfirmation" element={<PaymentConfirmation />} />
+        <Route path="/paymentSuccess" element={<PaymentSuccess />} />
 
         <Route element={<ProtectedLayout />}>
           <Route path="/dashboard" element={<Dashboard />} />

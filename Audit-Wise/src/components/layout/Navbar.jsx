@@ -18,7 +18,6 @@ import {
   Button,
 } from "@mui/material";
 import { useNavigate } from "react-router-dom";
-
 import SearchIcon from "@mui/icons-material/Search";
 import DarkModeIcon from "@mui/icons-material/DarkMode";
 import LightModeIcon from "@mui/icons-material/LightMode";
@@ -35,6 +34,7 @@ const Navbar = () => {
   const [anchorEl, setAnchorEl] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
+  const [logoutError, setLogoutError] = useState("");
 
   const debouncedSearch = useDebounce(searchQuery, 500);
   const open = Boolean(anchorEl);
@@ -70,16 +70,22 @@ const Navbar = () => {
   const handleLogoutClick = () => {
     handleClose();
     setLogoutDialogOpen(true);
+    setLogoutError("");
   };
 
   const handleLogoutConfirm = async () => {
-    await logout();
-    setLogoutDialogOpen(false);
-    navigate("/", { replace: true });
+    try {
+      await logout();
+      setLogoutDialogOpen(false);
+      navigate("/", { replace: true });
+    } catch (err) {
+      setLogoutError("Failed to logout. Please try again.");
+    }
   };
 
   const handleLogoutCancel = () => {
     setLogoutDialogOpen(false);
+    setLogoutError("");
   };
 
   return (
@@ -155,7 +161,15 @@ const Navbar = () => {
               }}
             >
               <Box sx={{ px: 2, py: 1 }} align="center">
-                <Avatar sx={{ width: 32, height: 32, bgcolor: "#6366f1" }}>
+                <Avatar
+                  sx={{
+                    width: 48,
+                    height: 48,
+                    mx: "auto",
+                    mb: 1,
+                    bgcolor: "#6366f1",
+                  }}
+                >
                   {user?.name?.charAt(0).toUpperCase() || "A"}
                 </Avatar>
                 <Typography fontWeight="bold">
@@ -163,6 +177,14 @@ const Navbar = () => {
                 </Typography>
                 <Typography variant="body2" color="gray">
                   {user?.email || "user@gmail.com"}
+                </Typography>
+                <Typography
+                  variant="caption"
+                  color="#6366f1"
+                  fontWeight="bold"
+                  textTransform="capitalize"
+                >
+                  {user?.plan || "Free"} Plan
                 </Typography>
               </Box>
 
@@ -200,6 +222,11 @@ const Navbar = () => {
             Are you sure you want to logout? You will need to login again to
             access your dashboard.
           </DialogContentText>
+          {logoutError && (
+            <Typography color="error" variant="body2" sx={{ mt: 2 }}>
+              {logoutError}
+            </Typography>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={handleLogoutCancel} color="primary">

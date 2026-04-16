@@ -1,168 +1,204 @@
-import { useNavigate } from "react-router-dom"
-import { Card,CardContent,CardActions,Typography,Button,Box,Chip,Stack,Divider} from "@mui/material"
-const PricingCard = ({ plan, className, currentPlan, setSelectedPlanForPayment }) => {
-    const navigate = useNavigate()
-    function handlePayment(plan) {
-        setSelectedPlanForPayment(plan)
-        navigate("/paymentConfirmation",{replace:true})
-   
+import React, { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import {
+  Card,
+  CardContent,
+  CardActions,
+  Typography,
+  Button,
+  Box,
+  Chip,
+  Stack,
+  Divider,
+} from "@mui/material";
+import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import CancelIcon from "@mui/icons-material/Cancel";
+
+const PricingCard = ({
+  plan,
+  currentPlan,
+  setSelectedPlanForPayment,
+  selectedPlanForPayment,
+}) => {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (selectedPlanForPayment) {
+      navigate("/paymentConfirmation", {
+        state: { plan: selectedPlanForPayment },
+      });
     }
-    const isCurrentPlan = currentPlan === plan.planType
-   return (
-        <Box sx={{ position: "relative", width: "100%", maxWidth: 400, mx: "auto" }}>
-            {isCurrentPlan && (
-                <Chip
-                    label="Current Plan"
-                    color="primary"
-                    size="small"
-                    sx={{
-                        position: "absolute",
-                        top: -12,
-                        left: "50%",
-                        transform: "translateX(-50%)",
-                        zIndex: 1,
-                        fontWeight: 600,
-                        backgroundColor:"green"
-                    }}
-                />
-            )}
+  }, [selectedPlanForPayment, navigate]);
 
-            <Card
-                className={className ?? "card-style"}
-                elevation={isCurrentPlan ? 8 : 3}
-                sx={{
-                    border: 2,
-                    borderColor: isCurrentPlan ? "primary.main" : "grey.300",
-                    borderRadius: 3,
-                    textAlign: "center",
-                    transition: "all 0.3s ease",
-                    height: "100%",
-                    minHeight: 500,
-                    display: "flex",
-                    flexDirection: "column",
-                    "&:hover": {
-                        transform: "translateY(-8px)",
-                        boxShadow: 6
-                    }
-                }}
+  const handlePayment = () => {
+    try {
+      setSelectedPlanForPayment(plan);
+    } catch (err) {
+      console.error("Payment initiation failed:", err);
+    }
+  };
+
+  const isCurrentPlan =
+    currentPlan?.toLowerCase() === plan.planType.toLowerCase();
+  const isFreePlan = plan.planType === "Free";
+
+  return (
+    <Box
+      sx={{ position: "relative", width: "100%", maxWidth: 400, mx: "auto" }}
+    >
+      {isCurrentPlan && (
+        <Chip
+          label="Current Plan"
+          size="small"
+          sx={{
+            position: "absolute",
+            top: -12,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 1,
+            fontWeight: 600,
+            backgroundColor: "#10b981",
+            color: "white",
+          }}
+        />
+      )}
+
+      <Card
+        elevation={isCurrentPlan ? 8 : 3}
+        sx={{
+          border: 2,
+          borderColor: isCurrentPlan ? "#10b981" : "grey.300",
+          borderRadius: 3,
+          textAlign: "center",
+          transition: "all 0.3s ease",
+          height: "100%",
+          minHeight: 520,
+          display: "flex",
+          flexDirection: "column",
+          "&:hover": {
+            transform: "translateY(-8px)",
+            boxShadow: 6,
+          },
+        }}
+      >
+        <CardContent
+          sx={{ flexGrow: 1, p: 4, display: "flex", flexDirection: "column" }}
+        >
+          <Typography
+            variant="h4"
+            sx={{
+              fontWeight: 700,
+              color: "#6366f1",
+              mb: 2,
+              textTransform: "capitalize",
+            }}
+          >
+            {plan.planType}
+          </Typography>
+
+          <Box sx={{ mb: 3 }}>
+            <Typography
+              variant="h3"
+              sx={{
+                fontWeight: 700,
+                color: "text.primary",
+              }}
             >
-                <CardContent sx={{ flexGrow: 1, p: 4, display: "flex", flexDirection: "column" }}>
-                    <Typography
-                        variant="h4"
-                        component="h1"
-                        sx={{
-                            fontWeight: 700,
-                            color: "steelblue",
-                            mb: 2,
-                            minHeight: 40
-                        }}
-                    >
-                        {plan.planType}
-                    </Typography>
+              {plan.price === 0 ? "Free" : `₹${plan.price}`}
+            </Typography>
+            {plan.price > 0 && (
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ mt: 0.5 }}
+              >
+                per month
+              </Typography>
+            )}
+            {plan.price > 0 && (
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ display: "block", mt: 1 }}
+              >
+                (exclusive of GST)
+              </Typography>
+            )}
+          </Box>
 
-                    <Box sx={{ mb: 3, minHeight: 100 }}>
-                        <Typography
-                            variant="h3"
-                            component="h2"
-                            sx={{
-                                fontWeight: 700,
-                                color: "text.primary"
-                            }}
-                        >
-                            ₹{plan.price}
-                        </Typography>
-                        <Typography
-                            variant="body2"
-                            color="text.secondary"
-                            sx={{ mt: 0.5 }}
-                        >
-                            INR/month
-                        </Typography>
-                     
-                            <Typography
-                                variant="caption"
-                                color="text.secondary"
-                                sx={{ display: "block", mt: 1, fontStyle: "italic", minHeight: 20 }}
-                            >
-                                (exclusive of GST)
-                            </Typography>
-                        
-                        {plan.planType === currentPlan && (
-                            <Box sx={{ minHeight: 20, mt: 1 }} />
-                        )}
-                    </Box>
+          <Typography variant="body1" color="text.secondary" sx={{ mb: 2 }}>
+            {plan.overview}
+          </Typography>
 
-                    <Typography
-                        variant="body1"
-                        color="text.secondary"
-                        sx={{ mb: 1, minHeight:20 }}
-                    >
-                        {plan.overview}
-                    </Typography>
+          <Divider sx={{ my: 2 }} />
 
-                    <Divider sx={{ my: 1 }} />
+          <Stack spacing={1.5} sx={{ flexGrow: 1 }}>
+            {plan.details.map((detail, i) => (
+              <Box
+                key={i}
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 1.5,
+                  justifyContent: "flex-start",
+                  px: 2,
+                }}
+              >
+                <Box
+                  sx={{
+                    color: detail.icon === "✓" ? "#10b981" : "#f44336",
+                    minWidth: 24,
+                  }}
+                >
+                  {detail.icon === "✓" ? (
+                    <CheckCircleIcon fontSize="small" />
+                  ) : (
+                    <CancelIcon fontSize="small" />
+                  )}
+                </Box>
+                <Typography
+                  variant="body2"
+                  sx={{
+                    textAlign: "left",
+                    color: "text.primary",
+                  }}
+                >
+                  {detail.description}
+                </Typography>
+              </Box>
+            ))}
+          </Stack>
+        </CardContent>
 
-                    <Stack spacing={2} sx={{ flexGrow: 1 }}>
-                        {plan.details.map((detail, i) => (
-                            <Box
-                                key={i}
-                                sx={{
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: 1.5,
-                                    justifyContent: "flex-start",
-                                    px: 2
-                                }}
-                            >
-                                <Box sx={{ color: "primary.main", display: "flex", minWidth: 24 }}>
-                                    {detail.icon}
-                                </Box>
-                                <Typography
-                                    variant="body2"
-                                    sx={{
-                                        textAlign: "left",
-                                        color: "text.primary"
-                                    }}
-                                >
-                                    {detail.description}
-                                </Typography>
-                            </Box>
-                        ))}
-                    </Stack>
-                </CardContent>
-                <CardActions sx={{ justifyContent: "center", p: 3, pt: 0 }}>
-                    <Button
-                        
-                        variant={isCurrentPlan ? "outlined" : "contained"}
-                        size="large"
-                        fullWidth
-                        onClick={() => {
-                            if (!(isCurrentPlan || plan.planType === "Free")) {
-                                handlePayment(plan)
-                            }
-                        }}
-                        sx={{
-                            py: 1.5,
-                            fontWeight: 600,
-                            borderRadius: 2,
-                            textTransform: "none",
-                            fontSize: "1rem",
-                            cursor: (isCurrentPlan || plan.planType === "Free") ? "not-allowed" : "pointer",
-                            "&.Mui-disabled": {
-                                cursor: "not-allowed",
-                                pointerEvents: "auto" 
-                            }
-                        }}
+        <CardActions sx={{ justifyContent: "center", p: 3, pt: 0 }}>
+          <Button
+            variant={isCurrentPlan ? "outlined" : "contained"}
+            size="large"
+            fullWidth
+            onClick={handlePayment}
+            disabled={isCurrentPlan || isFreePlan}
+            sx={{
+              py: 1.5,
+              fontWeight: 600,
+              borderRadius: 2,
+              textTransform: "none",
+              fontSize: "1rem",
+              background:
+                isCurrentPlan || isFreePlan
+                  ? undefined
+                  : "linear-gradient(90deg, #6366f1, #38bdf8)",
+            }}
+          >
+            {isCurrentPlan
+              ? "Current Plan"
+              : isFreePlan
+                ? "Current Free Plan"
+                : `Upgrade to ${plan.planType}`}
+          </Button>
+        </CardActions>
+      </Card>
+    </Box>
+  );
+};
 
-                        disabled={plan.planType === currentPlan || plan.planType==="Free"}
-                    >
-                        {isCurrentPlan ? "Current Plan" : `Upgrade to ${plan.planType} `}
-                    </Button>
-
-                </CardActions>
-            </Card>
-        </Box>
-    )
-}
-
-export default PricingCard
+export default PricingCard;
