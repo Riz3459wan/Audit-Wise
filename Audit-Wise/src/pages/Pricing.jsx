@@ -8,7 +8,7 @@ import {
   CircularProgress,
 } from "@mui/material";
 import PricingCard from "../components/PricingCard";
-import { db } from "../database/db";
+import { db, PLAN_LIMITS } from "../database/db";
 import { useAuth } from "../hooks/useAuth";
 
 const Pricing = () => {
@@ -34,7 +34,7 @@ const Pricing = () => {
         { icon: "✗", description: "Advanced analytics" },
         { icon: "✗", description: "Priority support" },
       ],
-      maxUploads: 5,
+      maxUploads: PLAN_LIMITS.free,
     },
     {
       planType: "Pro",
@@ -47,7 +47,7 @@ const Pricing = () => {
         { icon: "✓", description: "Advanced analytics" },
         { icon: "✗", description: "24/7 phone support" },
       ],
-      maxUploads: 50,
+      maxUploads: PLAN_LIMITS.pro,
     },
     {
       planType: "Business",
@@ -60,7 +60,7 @@ const Pricing = () => {
         { icon: "✓", description: "Advanced analytics + Reports" },
         { icon: "✓", description: "Team collaboration" },
       ],
-      maxUploads: 200,
+      maxUploads: PLAN_LIMITS.business,
     },
   ];
 
@@ -88,7 +88,8 @@ const Pricing = () => {
         const plan = pricingPlans.find(
           (p) => p.planType.toLowerCase() === userPlan.toLowerCase(),
         );
-        setLimit(plan?.maxUploads || 5);
+        const extraUploads = user?.extraUploads || 0;
+        setLimit((plan?.maxUploads || 5) + extraUploads);
         setError(null);
       } catch (err) {
         setError("Failed to load usage data");

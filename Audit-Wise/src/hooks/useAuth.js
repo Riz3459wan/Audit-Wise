@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { db, dbHelpers } from "../database/db";
+import { db, dbHelpers, PLAN_LIMITS } from "../database/db";
 import { tabSession } from "../utils/tabSession";
 
 export const useAuth = () => {
@@ -76,43 +76,86 @@ export const useAuth = () => {
     checkAuth();
   }, [checkAuth]);
 
-
-  //added this method for changing the users new plan
-  const updateUserPlan = useCallback(async (newPlan) => {
-    if (!user) {
-      return { success: false, error: "No user logged in" };
-    }
-
-    try {
-
-      await db.users.update(user.id, {
-        plan: newPlan,
-        planUpdatedAt: Date.now(),
-      });
-
-
-      const updatedUser = await db.users.get(user.id);
-      
-      setUser(updatedUser);
-      const currentSession = tabSession.get();
-      if (currentSession) {
-        tabSession.set({
-          ...currentSession,
-          plan: newPlan,
-        });
+  const updateUserPlan = useCallback(
+    async (newPlan) => {
+      if (!user) {
+        return { success: false, error: "No user logged in" };
       }
-      await dbHelpers.logAudit(user.id, "PLAN_UPDATED", {
-        oldPlan: user.plan,
-        newPlan: newPlan,
-      });
 
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  }, [user]);
+      try {
+        const now = new Date();
+        const expiryDate = new Date();
+        expiryDate.setDate(expiryDate.getDate() + 30);
 
-  return { user, loading, login, logout, isAuthenticated: !!user, updateUserPlan };
+        await db.users.update(user.id, {
+          plan: newPlan.toLowerCase(),
+          planUpdatedAt: Date.now(),
+          planExpiryDate: expiryDate.toISOString(),
+          monthlyUploadCount: 0,
+          extraUploads: 0,
+        });
+
+        const updatedUser = await db.users.get(user.id);
+        setUser(updatedUser);
+
+        const currentSession = tabSession.get();
+        if (currentSession) {
+          tabSession.set({
+            ...currentSession,
+            plan: newPlan.toLowerCase(),
+          });
+        }
+
+        await dbHelpers.logAudit(user.id, "PLAN_UPDATED", {
+          oldPlan: user.plan,
+          newPlan: newPlan,
+          expiryDate: expiryDate.toISOString(),
+        });
+
+        return { success: true };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
+    [user],
+  );
+
+  const addExtraUploads = useCallback(
+    async (extraCount, price) => {
+      if (!user) {
+        return { success: false, error: "No user logged in" };
+      }
+
+      try {
+        const newExtraCount = await dbHelpers.addExtraUploads(
+          user.id,
+          extraCount,
+          price,
+        );
+        const updatedUser = await db.users.get(user.id);
+        setUser(updatedUser);
+
+        await dbHelpers.logAudit(user.id, "EXTRA_UPLOADS_ADDED", {
+          extraCount: extraCount,
+          totalExtra: newExtraCount,
+          price: price,
+        });
+
+        return { success: true, totalExtra: newExtraCount };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
+    [user],
+  );
+
+  return {
+    user,
+    loading,
+    login,
+    logout,
+    isAuthenticated: !!user,
+    updateUserPlan,
+    addExtraUploads,
+  };
 };
-
-

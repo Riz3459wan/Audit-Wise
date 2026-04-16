@@ -78,7 +78,7 @@ const PaymentConfirmation = () => {
   useEffect(() => {
     const timer = setInterval(() => {
       setRemainingTime((prevTime) => {
-        if (prevTime <= 1) {
+        if (prevTime === 0) {
           clearInterval(timer);
           alert("Time Limit Exceeded, Redirecting to Pricing Page");
           sessionStorage.removeItem("redirectToPrice");
