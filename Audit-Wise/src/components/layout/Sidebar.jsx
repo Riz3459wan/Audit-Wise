@@ -36,6 +36,22 @@ const Sidebar = () => {
     { text: "Settings", icon: <SettingsIcon />, path: "/setting" },
   ];
 
+  const handleNavigation = (path) => {
+    try {
+      navigate(path);
+    } catch (err) {
+      console.error("Navigation failed:", err);
+    }
+  };
+
+  const handleUpgradePlan = () => {
+    try {
+      navigate("/price");
+    } catch (err) {
+      console.error("Navigation failed:", err);
+    }
+  };
+
   return (
     <Box sx={{ display: "flex" }}>
       <Drawer
@@ -71,9 +87,7 @@ const Sidebar = () => {
           {menuItems.map((item, index) => (
             <ListItem key={index} disablePadding>
               <ListItemButton
-                onClick={() => {
-                  navigate(item.path);
-                }}
+                onClick={() => handleNavigation(item.path)}
                 sx={{
                   borderRadius: "10px",
                   mb: 1,
@@ -99,6 +113,7 @@ const Sidebar = () => {
           <Button
             variant="contained"
             fullWidth
+            onClick={handleUpgradePlan}
             sx={{
               mt: 2,
               background: "linear-gradient(90deg, #38bdf8, #6366f1)",

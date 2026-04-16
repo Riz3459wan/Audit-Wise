@@ -27,11 +27,14 @@ import AnalyticsIcon from "@mui/icons-material/Analytics";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import ErrorIcon from "@mui/icons-material/Error";
 import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
+import { Navigate, useNavigate } from "react-router-dom";
 
 import { useAuth } from "../hooks/useAuth";
 import { db, dbHelpers } from "../database/db";
+import { ocrService } from "../services/ocrService";
 
 const Uploads = () => {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const fileInputRef = useRef(null);
   const [uploads, setUploads] = useState([]);
@@ -39,7 +42,7 @@ const Uploads = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [isAnalysing, setIsAnalysing] = useState(false);
   const [error, setError] = useState("");
-  const [uploadLimit, setUploadLimit] = useState({
+  const [monthlyUsage, setMonthlyUsage] = useState({
     used: 0,
     total: 5,
     remaining: 5,
@@ -54,50 +57,65 @@ const Uploads = () => {
   useEffect(() => {
     if (user) {
       loadRecentUploads();
-      loadUploadStats();
+      loadMonthlyUsage();
     }
   }, [user]);
 
   const loadRecentUploads = async () => {
-    const docs = await db.documents
-      .where("userId")
-      .equals(user.id)
-      .reverse()
-      .limit(10)
-      .toArray();
-    setRecentUploads(docs);
+    try {
+      const docs = await db.documents
+        .where("userId")
+        .equals(user.id)
+        .reverse()
+        .limit(10)
+        .toArray();
+      setRecentUploads(docs);
+    } catch (err) {
+      setError("Failed to load recent uploads");
+    }
   };
 
-  const loadUploadStats = async () => {
-    const totalUploads = await db.documents
-      .where("userId")
-      .equals(user.id)
-      .count();
-    const plan = user?.plan || "free";
-    const maxUploads = planLimits[plan]?.maxUploads || 5;
+  const loadMonthlyUsage = async () => {
+    try {
+      if (!user) return;
 
-    setUploadLimit({
-      used: totalUploads,
-      total: maxUploads,
-      remaining: maxUploads - totalUploads,
-    });
+      const plan = user?.plan?.toLowerCase() || "free";
+      const maxUploads = planLimits[plan]?.maxUploads || 5;
+
+      const currentCount = await dbHelpers.getCurrentMonthUploadCount(user.id);
+
+      setMonthlyUsage({
+        used: currentCount,
+        total: maxUploads,
+        remaining: Math.max(0, maxUploads - currentCount),
+      });
+    } catch (err) {
+      console.error("Failed to load usage statistics:", err);
+      setError("Failed to load usage statistics");
+    }
   };
 
-  const checkUploadLimit = (fileCount) => {
-    const plan = user?.plan || "free";
-    const maxUploads = planLimits[plan]?.maxUploads;
+  const checkUploadLimit = async (fileCount) => {
+    try {
+      const currentCount = await dbHelpers.getCurrentMonthUploadCount(user.id);
+      const plan = user?.plan?.toLowerCase() || "free";
+      const maxUploads = planLimits[plan]?.maxUploads || 5;
 
-    if (uploadLimit.used + fileCount > maxUploads) {
-      setError(
-        `You have reached your ${plan} plan limit of ${maxUploads} uploads. Upgrade to upload more.`,
-      );
+      if (currentCount + fileCount > maxUploads) {
+        setError(
+          `You have reached your ${plan} plan limit of ${maxUploads} uploads this month. Upgrade to upload more.`,
+        );
+        return false;
+      }
+      return true;
+    } catch (err) {
+      setError("Failed to check upload limit");
       return false;
     }
-    return true;
   };
 
   const checkFileSize = (file) => {
-    const plan = user?.plan || "free";
+    const plan = user?.plan?.toLowerCase() || "free";
     const maxSize = planLimits[plan]?.maxFileSize;
 
     if (file.size > maxSize) {
@@ -109,11 +127,12 @@ const Uploads = () => {
     return true;
   };
 
-  const handleFileSelect = (event) => {
+  const handleFileSelect = async (event) => {
     const files = Array.from(event.target.files);
     if (files.length === 0) return;
 
-    if (!checkUploadLimit(files.length)) return;
+    const canUpload = await checkUploadLimit(files.length);
+    if (!canUpload) return;
 
     const validFiles = [];
     for (const file of files) {
@@ -131,37 +150,69 @@ const Uploads = () => {
       type: file.type,
       status: "pending",
       progress: 0,
+      ocrProgress: 0,
       error: null,
+      extractedText: null,
+      aiResult: null,
     }));
 
     setUploads((prev) => [...prev, ...newUploads]);
     setError("");
   };
 
-  const simulateUpload = async (uploadItem) => {
-    return new Promise((resolve) => {
-      let progress = 0;
-      const interval = setInterval(() => {
-        progress += 10;
-        setUploads((prev) =>
-          prev.map((u) => (u.id === uploadItem.id ? { ...u, progress } : u)),
+  const processDocumentWithOCR = async (uploadItem, onProgress) => {
+    onProgress?.({ status: "ocr_started", progress: 10 });
+
+    let result;
+    try {
+      if (uploadItem.file.type === "application/pdf") {
+        result = await ocrService.extractTextFromPDF(
+          uploadItem.file,
+          onProgress,
         );
-        if (progress >= 100) {
-          clearInterval(interval);
-          resolve();
-        }
-      }, 200);
-    });
+      } else if (
+        uploadItem.file.type === "application/msword" ||
+        uploadItem.file.type ===
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      ) {
+        result = await ocrService.extractTextFromDOC(
+          uploadItem.file,
+          onProgress,
+        );
+      } else {
+        result = await ocrService.extractTextFromImage(
+          uploadItem.file,
+          onProgress,
+        );
+      }
+
+      if (!result.success) {
+        throw new Error(result.error);
+      }
+
+      return result;
+    } catch (error) {
+      console.error("OCR processing error:", error);
+      throw new Error(error.message || "Failed to process document");
+    }
   };
 
-  const processDocument = async (uploadItem) => {
+  const uploadDocument = async (uploadItem) => {
     setUploads((prev) =>
       prev.map((u) =>
-        u.id === uploadItem.id ? { ...u, status: "processing" } : u,
+        u.id === uploadItem.id
+          ? { ...u, status: "processing", ocrProgress: 0 }
+          : u,
       ),
     );
 
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const ocrResult = await processDocumentWithOCR(uploadItem, (progress) => {
+      setUploads((prev) =>
+        prev.map((u) =>
+          u.id === uploadItem.id ? { ...u, ocrProgress: progress.progress } : u,
+        ),
+      );
+    });
 
     const documentData = {
       fileName: uploadItem.file.name,
@@ -169,27 +220,125 @@ const Uploads = () => {
       fileType: uploadItem.file.type,
       filePath: URL.createObjectURL(uploadItem.file),
       status: "completed",
+      extractedText: ocrResult.text,
+      confidence: ocrResult.confidence || 0.9,
     };
 
     const documentId = await dbHelpers.saveDocument(user.id, documentData);
 
+    await loadMonthlyUsage();
+
     setUploads((prev) =>
       prev.map((u) =>
-        u.id === uploadItem.id ? { ...u, status: "completed", documentId } : u,
+        u.id === uploadItem.id
+          ? {
+              ...u,
+              status: "completed",
+              documentId,
+              extractedText: ocrResult.text,
+            }
+          : u,
       ),
     );
 
-    await loadRecentUploads();
-    await loadUploadStats();
-
     return documentId;
+  };
+
+  const analyzeWithAI = async (uploadItem, shouldRedirect = false) => {
+    setUploads((prev) =>
+      prev.map((u) =>
+        u.id === uploadItem.id
+          ? { ...u, status: "ai_analyzing", ocrProgress: 10 }
+          : u,
+      ),
+    );
+
+    try {
+      const result = await ocrService.analyzeWithAI(
+        uploadItem.extractedText,
+        (progress) => {
+          setUploads((prev) =>
+            prev.map((u) =>
+              u.id === uploadItem.id
+                ? { ...u, ocrProgress: progress.progress }
+                : u,
+            ),
+          );
+        },
+      );
+
+      const analysisData = {
+        extractedText: uploadItem.extractedText,
+        confidence: result.confidence || 0.8,
+        modelUsed:
+          result.mode === "cloud_ai"
+            ? "hugging-face-distilbert"
+            : "local-analysis",
+        language: "en",
+        analysis: result.analysis,
+        sentiment: result.sentiment,
+        riskLevel: result.riskLevel,
+        keyFindings: JSON.stringify(result.keyFindings || []),
+        recommendations: JSON.stringify(result.recommendations || []),
+        mode: result.mode,
+        wordCount: result.wordCount || 0,
+        charCount: result.charCount || 0,
+        summary: result.summary || "",
+      };
+
+      await dbHelpers.saveAnalyseResult(
+        uploadItem.documentId,
+        user.id,
+        analysisData,
+      );
+
+      setUploads((prev) =>
+        prev.map((u) =>
+          u.id === uploadItem.id
+            ? { ...u, status: "analysed", aiResult: result, mode: result.mode }
+            : u,
+        ),
+      );
+
+      await loadRecentUploads();
+
+      if (shouldRedirect) {
+        const fullAnalysisData = {
+          ...analysisData,
+          documentId: uploadItem.documentId,
+          documentName: uploadItem.name,
+          fileName: uploadItem.name,
+          fileSize: uploadItem.size,
+          fileType: uploadItem.type,
+          scannedAt: new Date().toISOString(),
+        };
+        sessionStorage.setItem(
+          "currentAnalysis",
+          JSON.stringify(fullAnalysisData),
+        );
+        navigate("/dashboard", { state: { analysisData: fullAnalysisData } });
+      }
+
+      return true;
+    } catch (err) {
+      console.error("Analysis error:", err);
+      setUploads((prev) =>
+        prev.map((u) =>
+          u.id === uploadItem.id
+            ? { ...u, status: "error", error: err.message }
+            : u,
+        ),
+      );
+      return false;
+    }
   };
 
   const handleUpload = async () => {
     const pendingUploads = uploads.filter((u) => u.status === "pending");
     if (pendingUploads.length === 0) return;
 
-    if (!checkUploadLimit(pendingUploads.length)) return;
+    const canUpload = await checkUploadLimit(pendingUploads.length);
+    if (!canUpload) return;
 
     setIsUploading(true);
     setError("");
@@ -202,8 +351,7 @@ const Uploads = () => {
           ),
         );
 
-        await simulateUpload(upload);
-        await processDocument(upload);
+        await uploadDocument(upload);
       } catch (err) {
         setUploads((prev) =>
           prev.map((u) =>
@@ -212,20 +360,31 @@ const Uploads = () => {
               : u,
           ),
         );
-        setError(`Failed to upload ${upload.name}`);
+        setError(`Failed to process ${upload.name}: ${err.message}`);
       }
     }
 
     setIsUploading(false);
+    await loadRecentUploads();
+
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
   };
 
-  const handleAnalyse = async () => {
-    const completedUploads = uploads.filter((u) => u.status === "completed");
+  const handleAnalyse = async (upload, redirectToDashboard = false) => {
+    setIsAnalysing(true);
+    setError("");
+    await analyzeWithAI(upload, redirectToDashboard);
+    setIsAnalysing(false);
+  };
+
+  const handleAnalyseAll = async () => {
+    const completedUploads = uploads.filter(
+      (u) => u.status === "completed" && !u.aiResult,
+    );
     if (completedUploads.length === 0) {
-      setError("No completed uploads to analyse");
+      setError("No documents ready for AI analysis");
       return;
     }
 
@@ -233,40 +392,38 @@ const Uploads = () => {
     setError("");
 
     for (const upload of completedUploads) {
-      try {
-        setUploads((prev) =>
-          prev.map((u) =>
-            u.id === upload.id ? { ...u, status: "analysing" } : u,
-          ),
-        );
-
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-
-        await dbHelpers.saveAnalyseResult(upload.documentId, user.id, {
-          extractedText: "Sample extracted text from document",
-          confidence: 0.95,
-          modelUsed: "trocr-base-printed",
-          language: "en",
-        });
-
-        setUploads((prev) =>
-          prev.map((u) =>
-            u.id === upload.id ? { ...u, status: "analysed" } : u,
-          ),
-        );
-      } catch (err) {
-        setUploads((prev) =>
-          prev.map((u) =>
-            u.id === upload.id
-              ? { ...u, status: "error", error: err.message }
-              : u,
-          ),
-        );
-        setError(`Failed to analyse ${upload.name}`);
-      }
+      await analyzeWithAI(upload, false);
     }
 
     setIsAnalysing(false);
+    await loadRecentUploads();
+  };
+
+  const handleRecentItemClick = async (doc) => {
+    const analysisResult = await db.analyseResult
+      .where("documentId")
+      .equals(doc.id)
+      .first();
+
+    if (analysisResult) {
+      const fullAnalysisData = {
+        ...analysisResult,
+        documentId: doc.id,
+        documentName: doc.fileName,
+        fileName: doc.fileName,
+        fileSize: doc.fileSize,
+        fileType: doc.fileType,
+        scannedAt: doc.scannedAt,
+        extractedText: doc.extractedText,
+      };
+      sessionStorage.setItem(
+        "currentAnalysis",
+        JSON.stringify(fullAnalysisData),
+      );
+      navigate("/dashboard", { state: { analysisData: fullAnalysisData } });
+    } else {
+      setError("Analysis data not found for this document");
+    }
   };
 
   const removeUpload = (id) => {
@@ -280,9 +437,13 @@ const Uploads = () => {
   };
 
   const deleteRecentUpload = async (docId) => {
-    await db.documents.delete(docId);
-    await loadRecentUploads();
-    await loadUploadStats();
+    try {
+      await db.documents.delete(docId);
+      await loadRecentUploads();
+      await loadMonthlyUsage();
+    } catch (err) {
+      setError("Failed to delete upload");
+    }
   };
 
   const formatFileSize = (bytes) => {
@@ -314,6 +475,7 @@ const Uploads = () => {
         return "error";
       case "processing":
       case "analysing":
+      case "ai_analyzing":
         return "warning";
       default:
         return "info";
@@ -333,7 +495,7 @@ const Uploads = () => {
   };
 
   const getPlanColor = () => {
-    const plan = user?.plan || "free";
+    const plan = user?.plan?.toLowerCase() || "free";
     switch (plan) {
       case "pro":
         return "#6366f1";
@@ -345,7 +507,7 @@ const Uploads = () => {
   };
 
   const getUploadWarning = () => {
-    const remaining = uploadLimit.remaining;
+    const remaining = monthlyUsage.remaining;
     if (remaining <= 0) return "danger";
     if (remaining <= 2) return "warning";
     return "ok";
@@ -354,13 +516,49 @@ const Uploads = () => {
   const hasCompletedUploads = uploads.some((u) => u.status === "completed");
   const hasPendingUploads = uploads.some((u) => u.status === "pending");
 
+  const getStatusMessage = (upload) => {
+    if (upload.status === "ai_analyzing") {
+      if (upload.ocrProgress < 20)
+        return navigator.onLine
+          ? "Connecting to AI service..."
+          : "Running local analysis...";
+      if (upload.ocrProgress < 60)
+        return navigator.onLine
+          ? "AI analyzing document..."
+          : "Processing document...";
+      return "Finalizing results...";
+    }
+    if (upload.status === "processing") {
+      if (upload.type === "application/pdf") {
+        if (upload.ocrProgress < 30) return "Loading PDF document...";
+        if (upload.ocrProgress < 70) return "Extracting text from PDF...";
+        return "Finalizing PDF extraction...";
+      }
+      if (upload.type?.startsWith("image/")) {
+        if (upload.ocrProgress < 30) return "Processing image...";
+        if (upload.ocrProgress < 70) return "Extracting text from image...";
+        return "Finalizing image analysis...";
+      }
+      if (
+        upload.type === "application/msword" ||
+        upload.type ===
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      ) {
+        if (upload.ocrProgress < 30) return "Loading Word document...";
+        if (upload.ocrProgress < 70) return "Extracting text from document...";
+        return "Processing document content...";
+      }
+    }
+    return null;
+  };
+
   return (
     <Box>
       <Typography variant="h4" fontWeight="bold" mb={1}>
         Upload Documents
       </Typography>
       <Typography variant="body2" color="textSecondary" mb={3}>
-        Upload audit documents for processing and analysis
+        Upload audit documents for AI-powered processing and analysis
       </Typography>
 
       {error && (
@@ -370,7 +568,7 @@ const Uploads = () => {
       )}
 
       <Grid container spacing={3}>
-        <Grid xs={12} md={7}>
+        <Grid item xs={12} md={7}>
           <Box
             sx={{
               height: "100%",
@@ -384,65 +582,74 @@ const Uploads = () => {
                 p: 4,
                 textAlign: "center",
                 border: "2px dashed",
-                borderColor: uploadLimit.remaining <= 0 ? "#f44336" : "divider",
+                borderColor:
+                  monthlyUsage.remaining <= 0 ? "#f44336" : "divider",
                 borderRadius: "15px",
                 backgroundColor: "transparent",
-                cursor: uploadLimit.remaining <= 0 ? "not-allowed" : "pointer",
-                opacity: uploadLimit.remaining <= 0 ? 0.5 : 1,
+                cursor: monthlyUsage.remaining <= 0 ? "not-allowed" : "pointer",
+                opacity: monthlyUsage.remaining <= 0 ? 0.5 : 1,
                 "&:hover": {
                   borderColor:
-                    uploadLimit.remaining <= 0 ? "#f44336" : "#6366f1",
+                    monthlyUsage.remaining <= 0 ? "#f44336" : "#6366f1",
                   backgroundColor:
-                    uploadLimit.remaining <= 0
+                    monthlyUsage.remaining <= 0
                       ? "transparent"
                       : "rgba(99, 102, 241, 0.02)",
                 },
               }}
               onClick={() =>
-                uploadLimit.remaining > 0 && fileInputRef.current?.click()
+                monthlyUsage.remaining > 0 && fileInputRef.current?.click()
               }
             >
               <input
                 type="file"
                 ref={fileInputRef}
                 multiple
-                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                accept=".jpg,.jpeg,.png,.pdf,.doc,.docx"
                 style={{ display: "none" }}
                 onChange={handleFileSelect}
-                disabled={isUploading || uploadLimit.remaining <= 0}
+                disabled={isUploading || monthlyUsage.remaining <= 0}
               />
               <CloudUploadIcon
                 sx={{
                   fontSize: 60,
-                  color: uploadLimit.remaining <= 0 ? "#f44336" : "#6366f1",
+                  color: monthlyUsage.remaining <= 0 ? "#f44336" : "#6366f1",
                   mb: 2,
                 }}
               />
               <Typography variant="h6" gutterBottom>
-                {uploadLimit.remaining <= 0
-                  ? "Upload Limit Reached"
+                {monthlyUsage.remaining <= 0
+                  ? "Monthly Limit Reached"
                   : "Drag & drop files here or click to browse"}
               </Typography>
               <Typography variant="body2" color="textSecondary">
-                Supports: PDF, JPG, PNG, DOC (Max{" "}
-                {planLimits[user?.plan || "free"]?.maxFileSize / (1024 * 1024)}
+                Supports: JPG, PNG, PDF, DOC, DOCX (Max{" "}
+                {planLimits[user?.plan?.toLowerCase() || "free"]?.maxFileSize /
+                  (1024 * 1024)}
                 MB per file)
               </Typography>
-              {uploadLimit.remaining <= 0 && (
+              <Typography
+                variant="caption"
+                color="textSecondary"
+                sx={{ display: "block", mt: 1 }}
+              >
+                {navigator.onLine ? "☁ Cloud AI Mode" : "📴 Offline Mode"} -
+                Step 1: Upload & Extract | Step 2: AI Analysis
+              </Typography>
+              {monthlyUsage.remaining <= 0 && (
                 <Button
                   variant="contained"
                   sx={{
                     mt: 2,
                     background: "linear-gradient(90deg, #f59e0b, #ef4444)",
                   }}
-                  onClick={() => (window.location.href = "/price")}
+                  onClick={() => navigate("/price")}
                 >
                   Upgrade Plan
                 </Button>
               )}
             </Paper>
 
-            {/* Upload Queue */}
             {uploads.length > 0 && (
               <Paper sx={{ borderRadius: "15px", overflow: "hidden" }}>
                 <Box
@@ -475,7 +682,7 @@ const Uploads = () => {
                       <Button
                         variant="contained"
                         onClick={handleUpload}
-                        disabled={isUploading || uploadLimit.remaining <= 0}
+                        disabled={isUploading || monthlyUsage.remaining <= 0}
                         sx={{
                           background:
                             "linear-gradient(90deg, #6366f1, #38bdf8)",
@@ -484,7 +691,7 @@ const Uploads = () => {
                         {isUploading ? (
                           <CircularProgress size={24} sx={{ color: "white" }} />
                         ) : (
-                          `Upload ${uploads.filter((u) => u.status === "pending").length} Files`
+                          `Process ${uploads.filter((u) => u.status === "pending").length} Files`
                         )}
                       </Button>
                     )}
@@ -497,9 +704,10 @@ const Uploads = () => {
                       key={upload.id}
                       divider
                       secondaryAction={
-                        upload.status !== "uploading" &&
                         upload.status !== "processing" &&
-                        upload.status !== "analysing" && (
+                        upload.status !== "analysing" &&
+                        upload.status !== "uploading" &&
+                        upload.status !== "ai_analyzing" && (
                           <IconButton
                             edge="end"
                             onClick={() => removeUpload(upload.id)}
@@ -516,17 +724,31 @@ const Uploads = () => {
                       <ListItemText
                         primary={
                           <Box
+                            component="span"
                             sx={{
                               display: "flex",
                               alignItems: "center",
                               gap: 1,
+                              flexWrap: "wrap",
                             }}
                           >
-                            <Typography variant="body1" fontWeight="medium">
-                              {upload.name}
+                            <Typography
+                              variant="body1"
+                              fontWeight="medium"
+                              component="span"
+                            >
+                              {upload.name.length > 40
+                                ? upload.name.substring(0, 40) + "..."
+                                : upload.name}
                             </Typography>
                             <Chip
-                              label={upload.status}
+                              label={
+                                upload.status === "ai_analyzing"
+                                  ? navigator.onLine
+                                    ? "Cloud AI"
+                                    : "Local AI"
+                                  : upload.status
+                              }
                               size="small"
                               color={getStatusColor(upload.status)}
                               variant="outlined"
@@ -534,23 +756,92 @@ const Uploads = () => {
                           </Box>
                         }
                         secondary={
-                          <Box>
-                            <Typography variant="caption" color="textSecondary">
+                          <>
+                            <Typography
+                              variant="caption"
+                              color="textSecondary"
+                              component="span"
+                            >
                               {formatFileSize(upload.size)}
                             </Typography>
-                            {upload.progress > 0 && upload.progress < 100 && (
-                              <LinearProgress
-                                variant="determinate"
-                                value={upload.progress}
-                                sx={{ mt: 1, height: 4, borderRadius: 2 }}
-                              />
+                            {(upload.status === "processing" ||
+                              upload.status === "ai_analyzing") && (
+                              <Box
+                                component="span"
+                                sx={{ mt: 1, display: "block" }}
+                              >
+                                <LinearProgress
+                                  variant="determinate"
+                                  value={upload.ocrProgress || 0}
+                                  sx={{ height: 4, borderRadius: 2 }}
+                                />
+                                <Typography
+                                  variant="caption"
+                                  color="textSecondary"
+                                  component="span"
+                                  sx={{ mt: 0.5, display: "block" }}
+                                >
+                                  {getStatusMessage(upload)}
+                                </Typography>
+                              </Box>
                             )}
                             {upload.error && (
-                              <Typography variant="caption" color="error">
+                              <Typography
+                                variant="caption"
+                                color="error"
+                                component="span"
+                                sx={{ display: "block", mt: 0.5 }}
+                              >
                                 {upload.error}
                               </Typography>
                             )}
-                          </Box>
+                            {upload.extractedText && !upload.aiResult && (
+                              <Typography
+                                variant="caption"
+                                color="success.main"
+                                component="span"
+                                sx={{ display: "block", mt: 0.5 }}
+                              >
+                                ✓ Text extracted successfully.
+                              </Typography>
+                            )}
+                            {upload.aiResult && (
+                              <Typography
+                                variant="caption"
+                                color="success.main"
+                                component="span"
+                                sx={{ display: "block", mt: 0.5 }}
+                              >
+                                ✓ Analysis Complete - Sentiment:{" "}
+                                {upload.aiResult.sentiment} | Risk:{" "}
+                                {upload.aiResult.riskLevel}
+                              </Typography>
+                            )}
+                            {upload.status === "completed" &&
+                              !upload.aiResult && (
+                                <Box sx={{ mt: 1 }}>
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    color="primary"
+                                    onClick={() => handleAnalyse(upload, false)}
+                                    disabled={isAnalysing}
+                                    sx={{ mr: 1 }}
+                                  >
+                                    Analyze
+                                  </Button>
+                                  <Button
+                                    size="small"
+                                    variant="contained"
+                                    color="success"
+                                    onClick={() => handleAnalyse(upload, true)}
+                                    disabled={isAnalysing}
+                                  >
+                                    Analyze & View Dashboard
+                                  </Button>
+                                </Box>
+                              )}
+                          </>
                         }
                       />
                     </ListItem>
@@ -565,7 +856,7 @@ const Uploads = () => {
                 variant="contained"
                 size="large"
                 disabled={isAnalysing}
-                onClick={handleAnalyse}
+                onClick={handleAnalyseAll}
                 sx={{
                   py: 2,
                   background: "linear-gradient(90deg, #10b981, #059669)",
@@ -583,8 +874,10 @@ const Uploads = () => {
                 }
               >
                 {isAnalysing
-                  ? "Analysing Documents..."
-                  : "Analyse Uploaded Documents"}
+                  ? navigator.onLine
+                    ? "Running Cloud AI Analysis..."
+                    : "Running Local Analysis..."
+                  : "Analyse All Documents"}
               </Button>
             )}
           </Box>
@@ -599,54 +892,61 @@ const Uploads = () => {
               gap: 3,
             }}
           >
-            <Paper sx={{ borderRadius: "15px", overflow: "hidden", flex: 1 }}>
+            {/* Recent Uploads Section */}
+            <Paper sx={{ borderRadius: "15px", overflow: "hidden" }}>
               <Box
-                sx={{ p: 2, borderBottom: "1px solid", borderColor: "divider" }}
+                sx={{
+                  p: 2,
+                  borderBottom: "1px solid",
+                  borderColor: "divider",
+                  bgcolor: "primary.main",
+                  color: "white",
+                }}
               >
                 <Typography variant="h6">Recent Uploads</Typography>
+                <Typography variant="caption">
+                  Click any item to view analysis
+                </Typography>
               </Box>
               {recentUploads.length > 0 ? (
                 <List sx={{ maxHeight: 400, overflow: "auto" }}>
-                  {recentUploads.map((doc, index) => (
+                  {recentUploads.slice(0, 5).map((doc, index) => (
                     <ListItem
                       key={doc.id}
                       divider={index < recentUploads.length - 1}
                       secondaryAction={
                         <IconButton
                           edge="end"
-                          onClick={() => deleteRecentUpload(doc.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteRecentUpload(doc.id);
+                          }}
                         >
                           <DeleteIcon />
                         </IconButton>
                       }
+                      sx={{
+                        cursor: "pointer",
+                        "&:hover": { bgcolor: "action.hover" },
+                      }}
+                      onClick={() => handleRecentItemClick(doc)}
                     >
                       <ListItemIcon>
                         <CloudDoneIcon sx={{ color: "#10b981" }} />
                       </ListItemIcon>
                       <ListItemText
                         primary={
-                          <Box
-                            sx={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 1,
-                            }}
-                          >
-                            <Typography variant="body1" fontWeight="medium">
-                              {doc.fileName}
-                            </Typography>
-                            <Chip
-                              label={doc.status}
-                              size="small"
-                              color="success"
-                              variant="outlined"
-                            />
-                          </Box>
+                          <Typography variant="body1" fontWeight="medium">
+                            {doc.fileName.length > 40
+                              ? doc.fileName.substring(0, 40) + "..."
+                              : doc.fileName}
+                          </Typography>
                         }
                         secondary={
                           <Typography variant="caption" color="textSecondary">
                             {formatFileSize(doc.fileSize)} •{" "}
                             {formatDate(doc.scannedAt)}
+                            {doc.extractedText && " • Analyzed"}
                           </Typography>
                         }
                       />
@@ -688,7 +988,8 @@ const Uploads = () => {
                   color="textSecondary"
                   gutterBottom
                 >
-                  Upload Usage
+                  Monthly Usage (
+                  {new Date().toLocaleString("default", { month: "long" })})
                 </Typography>
                 <Box
                   sx={{
@@ -698,10 +999,7 @@ const Uploads = () => {
                   }}
                 >
                   <Typography variant="body2">
-                    {uploadLimit.used}/
-                    {uploadLimit.total === Infinity
-                      ? "Unlimited"
-                      : uploadLimit.total}
+                    {monthlyUsage.used}/{monthlyUsage.total}
                   </Typography>
                   <Typography
                     variant="body2"
@@ -713,20 +1011,12 @@ const Uploads = () => {
                           : "#10b981"
                     }
                   >
-                    {uploadLimit.remaining === Infinity
-                      ? "Unlimited remaining"
-                      : `${uploadLimit.remaining} remaining`}
+                    {monthlyUsage.remaining} remaining this month
                   </Typography>
                 </Box>
                 <LinearProgress
                   variant="determinate"
-                  value={
-                    (uploadLimit.used /
-                      (uploadLimit.total === Infinity
-                        ? 100
-                        : uploadLimit.total)) *
-                    100
-                  }
+                  value={(monthlyUsage.used / monthlyUsage.total) * 100}
                   sx={{
                     height: 8,
                     borderRadius: 4,
@@ -741,21 +1031,35 @@ const Uploads = () => {
                     },
                   }}
                 />
-                {uploadLimit.remaining <= 2 && uploadLimit.remaining > 0 && (
+                {monthlyUsage.remaining <= 2 && monthlyUsage.remaining > 0 && (
                   <Alert
                     severity="warning"
                     sx={{ mt: 2 }}
                     icon={<WarningIcon />}
                   >
-                    You have only {uploadLimit.remaining} uploads left on your{" "}
-                    {user?.plan || "free"} plan.
+                    You have only {monthlyUsage.remaining} uploads left this
+                    month.
                     <Button
                       size="small"
                       color="warning"
-                      href="/price"
                       sx={{ ml: 1 }}
+                      onClick={() => navigate("/price")}
                     >
                       Upgrade
+                    </Button>
+                  </Alert>
+                )}
+                {monthlyUsage.remaining === 0 && (
+                  <Alert severity="error" sx={{ mt: 2 }} icon={<WarningIcon />}>
+                    You've reached your monthly limit. Upgrade to continue
+                    uploading.
+                    <Button
+                      size="small"
+                      color="error"
+                      sx={{ ml: 1 }}
+                      onClick={() => navigate("/price")}
+                    >
+                      Upgrade Now
                     </Button>
                   </Alert>
                 )}
@@ -765,7 +1069,6 @@ const Uploads = () => {
         </Grid>
       </Grid>
 
-      {/* Empty State */}
       {uploads.length === 0 && recentUploads.length === 0 && (
         <Paper
           sx={{
@@ -783,7 +1086,7 @@ const Uploads = () => {
             No files uploaded yet
           </Typography>
           <Typography variant="body2" color="textSecondary">
-            Click the area above to select files for audit
+            Click the area above to select files for AI-powered audit
           </Typography>
         </Paper>
       )}

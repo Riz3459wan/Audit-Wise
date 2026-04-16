@@ -6,6 +6,7 @@ import {
   Typography,
   Paper,
   CircularProgress,
+  Alert,
 } from "@mui/material";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
@@ -18,7 +19,6 @@ const Login = () => {
     email: "",
     password: "",
   });
-
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
@@ -30,30 +30,51 @@ const Login = () => {
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
-    setError("");
+    if (error) setError("");
+  };
+
+  const validateForm = () => {
+    if (!form.email.trim()) {
+      setError("Email is required");
+      return false;
+    }
+    if (!form.email.includes("@") || !form.email.includes(".")) {
+      setError("Enter a valid email address");
+      return false;
+    }
+    if (!form.password) {
+      setError("Password is required");
+      return false;
+    }
+    if (form.password.length < 6) {
+      setError("Password must be at least 6 characters");
+      return false;
+    }
+    return true;
   };
 
   const handleLogin = async () => {
-    if (!form.email || !form.password) {
-      setError("Please fill in all fields");
-      return;
-    }
+    if (!validateForm()) return;
 
     setIsLoading(true);
     setError("");
 
-    const result = await login(form.email, form.password);
+    try {
+      const result = await login(form.email, form.password);
 
-    setIsLoading(false);
-
-    if (result.success) {
-      navigate("/dashboard", { replace: true });
-    } else {
-      setError(result.error || "Invalid email or password");
+      if (result.success) {
+        navigate("/dashboard", { replace: true });
+      } else {
+        setError(result.error || "Invalid email or password");
+      }
+    } catch (err) {
+      setError("Something went wrong. Please try again.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleKeyPress = (e) => {
+  const handleKeyDown = (e) => {
     if (e.key === "Enter") {
       handleLogin();
     }
@@ -67,13 +88,14 @@ const Login = () => {
           display: "flex",
           justifyContent: "center",
           alignItems: "center",
-          background: "linear-gradient(135deg, #6366f1,#38bdf8)",
+          background: "linear-gradient(135deg, #6366f1, #38bdf8)",
         }}
       >
         <CircularProgress sx={{ color: "white" }} />
       </Box>
     );
   }
+
   return (
     <Box
       sx={{
@@ -96,14 +118,23 @@ const Login = () => {
           Login
         </Typography>
 
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {error}
+          </Alert>
+        )}
+
         <TextField
           fullWidth
           label="Email"
           name="email"
+          type="email"
           margin="normal"
+          value={form.email}
           onChange={handleChange}
-          onKeyPress={handleKeyPress}
+          onKeyDown={handleKeyDown}
           disabled={isLoading}
+          error={!!error && !form.email}
         />
 
         <TextField
@@ -112,9 +143,11 @@ const Login = () => {
           type="password"
           name="password"
           margin="normal"
+          value={form.password}
           onChange={handleChange}
-          onKeyPress={handleKeyPress}
+          onKeyDown={handleKeyDown}
           disabled={isLoading}
+          error={!!error && !form.password}
         />
 
         <Button
@@ -123,6 +156,7 @@ const Login = () => {
           disabled={isLoading}
           sx={{
             mt: 2,
+            py: 1.5,
             background: "linear-gradient(90deg, #6366f1, #38bdf8)",
           }}
           onClick={handleLogin}
@@ -133,11 +167,16 @@ const Login = () => {
             "Login"
           )}
         </Button>
+
         <Typography mt={2} align="center">
           Don't have an account?{" "}
           <NavLink
             to="/register"
-            style={{ color: "#38bdf8", fontWeight: "bold" }}
+            style={{
+              color: "#38bdf8",
+              fontWeight: "bold",
+              textDecoration: "none",
+            }}
           >
             Register
           </NavLink>
