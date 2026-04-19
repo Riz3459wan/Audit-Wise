@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Box,
   Grid,
@@ -12,18 +12,25 @@ import {
   DialogContent,
   DialogActions,
   TextField,
+  Alert,
+  Snackbar,
+  useMediaQuery,
+  useTheme,
 } from "@mui/material";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import AssessmentIcon from "@mui/icons-material/Assessment";
 import AddCircleIcon from "@mui/icons-material/AddCircle";
+import WarningIcon from "@mui/icons-material/Warning";
 import { usePreventBack } from "../hooks/usePreventBack";
 import { useAuth } from "../hooks/useAuth";
 import { db, PLAN_LIMITS } from "../database/db";
 
 const Dashboard = () => {
   usePreventBack();
-  const { user, addExtraUploads } = useAuth();
+  const { user, addExtraUploads, refreshUser } = useAuth();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const [stats, setStats] = useState({
     totalUploads: 0,
     totalReports: 0,
@@ -34,48 +41,53 @@ const Dashboard = () => {
   const [extraDialogOpen, setExtraDialogOpen] = useState(false);
   const [extraCount, setExtraCount] = useState(10);
   const [addingExtra, setAddingExtra] = useState(false);
+  const [snackbar, setSnackbar] = useState({
+    open: false,
+    message: "",
+    severity: "success",
+  });
+
+  const loadStats = useCallback(async () => {
+    if (!user) return;
+
+    try {
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+      const totalUploads = await db.documents
+        .where("userId")
+        .equals(user.id)
+        .count();
+      const totalReports = await db.reports
+        .where("userId")
+        .equals(user.id)
+        .count();
+
+      const monthlyUploads = await db.documents
+        .where("userId")
+        .equals(user.id)
+        .filter((doc) => new Date(doc.scannedAt) >= startOfMonth)
+        .count();
+
+      setStats({
+        totalUploads,
+        totalReports,
+        totalUploadsThisMonth: monthlyUploads,
+        loading: false,
+        error: null,
+      });
+    } catch (err) {
+      setStats((prev) => ({
+        ...prev,
+        loading: false,
+        error: "Failed to load statistics",
+      }));
+    }
+  }, [user]);
 
   useEffect(() => {
-    const loadStats = async () => {
-      if (!user) return;
-
-      try {
-        const now = new Date();
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-
-        const totalUploads = await db.documents
-          .where("userId")
-          .equals(user.id)
-          .count();
-        const totalReports = await db.reports
-          .where("userId")
-          .equals(user.id)
-          .count();
-
-        const monthlyUploads = await db.documents
-          .where("userId")
-          .equals(user.id)
-          .filter((doc) => new Date(doc.scannedAt) >= startOfMonth)
-          .count();
-
-        setStats({
-          totalUploads,
-          totalReports,
-          totalUploadsThisMonth: monthlyUploads,
-          loading: false,
-          error: null,
-        });
-      } catch (err) {
-        setStats((prev) => ({
-          ...prev,
-          loading: false,
-          error: "Failed to load statistics",
-        }));
-      }
-    };
-
     loadStats();
-  }, [user]);
+  }, [loadStats]);
 
   const currentPlan = user?.plan || "free";
   const extraUploads = user?.extraUploads || 0;
@@ -85,6 +97,14 @@ const Dashboard = () => {
     0,
     totalLimit - stats.totalUploadsThisMonth,
   );
+  const planExpiryDate = user?.planExpiryDate
+    ? new Date(user.planExpiryDate)
+    : null;
+  const daysUntilExpiry = planExpiryDate
+    ? Math.ceil((planExpiryDate - new Date()) / (1000 * 60 * 60 * 24))
+    : null;
+  const isPlanExpiring =
+    daysUntilExpiry !== null && daysUntilExpiry <= 7 && daysUntilExpiry > 0;
 
   const statCards = [
     {
@@ -108,17 +128,41 @@ const Dashboard = () => {
   ];
 
   const handleAddExtraUploads = async () => {
+    if (extraCount < 1 || extraCount > 100) {
+      setSnackbar({
+        open: true,
+        message: "Please select between 1 and 100 extra uploads",
+        severity: "error",
+      });
+      return;
+    }
+
     setAddingExtra(true);
     const price = extraCount * 50;
     const result = await addExtraUploads(extraCount, price);
+
     if (result.success) {
+      setSnackbar({
+        open: true,
+        message: `Successfully added ${extraCount} extra uploads!`,
+        severity: "success",
+      });
       setExtraDialogOpen(false);
       setExtraCount(10);
-      window.location.reload();
+      await refreshUser();
+      await loadStats();
     } else {
-      alert("Failed to add extra uploads");
+      setSnackbar({
+        open: true,
+        message: result.error || "Failed to add extra uploads",
+        severity: "error",
+      });
     }
     setAddingExtra(false);
+  };
+
+  const handleCloseSnackbar = () => {
+    setSnackbar({ ...snackbar, open: false });
   };
 
   if (stats.loading) {
@@ -140,13 +184,16 @@ const Dashboard = () => {
     return (
       <Box sx={{ textAlign: "center", py: 4 }}>
         <Typography color="error">{stats.error}</Typography>
+        <Button onClick={loadStats} sx={{ mt: 2 }}>
+          Retry
+        </Button>
       </Box>
     );
   }
 
   return (
     <Box>
-      <Typography variant="h4" fontWeight="bold" mb={1}>
+      <Typography variant={isMobile ? "h5" : "h4"} fontWeight="bold" mb={1}>
         Welcome back, {user?.name?.split(" ")[0] || "User"}!
       </Typography>
       <Typography variant="body2" color="textSecondary" mb={3}>
@@ -154,9 +201,29 @@ const Dashboard = () => {
         limit ({baseLimit} base + {extraUploads} extra)
       </Typography>
 
-      <Grid container spacing={3}>
+      {isPlanExpiring && (
+        <Alert
+          severity="warning"
+          icon={<WarningIcon />}
+          sx={{ mb: 3 }}
+          action={
+            <Button
+              color="warning"
+              size="small"
+              onClick={() => (window.location.href = "/price")}
+            >
+              Renew Now
+            </Button>
+          }
+        >
+          Your {currentPlan} plan expires in {daysUntilExpiry} days. Renew to
+          continue enjoying benefits!
+        </Alert>
+      )}
+
+      <Grid container spacing={isMobile ? 2 : 3}>
         {statCards.map((stat, index) => (
-          <Grid item xs={12} md={4} key={index}>
+          <Grid item xs={12} sm={6} md={4} key={index}>
             <Card sx={{ borderRadius: "15px", boxShadow: 3 }}>
               <CardContent>
                 <Box
@@ -191,6 +258,8 @@ const Dashboard = () => {
             justifyContent: "space-between",
             alignItems: "center",
             mb: 2,
+            flexWrap: "wrap",
+            gap: 2,
           }}
         >
           <Typography variant="h6">Recent Activity</Typography>
@@ -212,12 +281,15 @@ const Dashboard = () => {
         </Card>
       </Box>
 
-      <Dialog open={extraDialogOpen} onClose={() => setExtraDialogOpen(false)}>
+      <Dialog
+        open={extraDialogOpen}
+        onClose={() => !addingExtra && setExtraDialogOpen(false)}
+      >
         <DialogTitle>Purchase Extra Uploads</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
             Each extra upload costs ₹50. These will be added to your current
-            monthly limit.
+            monthly limit and expire at the end of the month.
           </Typography>
           <TextField
             fullWidth
@@ -225,16 +297,24 @@ const Dashboard = () => {
             label="Number of Extra Uploads"
             value={extraCount}
             onChange={(e) =>
-              setExtraCount(Math.max(1, parseInt(e.target.value) || 0))
+              setExtraCount(
+                Math.min(100, Math.max(1, parseInt(e.target.value) || 1)),
+              )
             }
             InputProps={{ inputProps: { min: 1, max: 100 } }}
+            disabled={addingExtra}
           />
           <Typography variant="h6" sx={{ mt: 2 }}>
             Total: ₹{extraCount * 50}
           </Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setExtraDialogOpen(false)}>Cancel</Button>
+          <Button
+            onClick={() => setExtraDialogOpen(false)}
+            disabled={addingExtra}
+          >
+            Cancel
+          </Button>
           <Button
             onClick={handleAddExtraUploads}
             disabled={addingExtra}
@@ -245,6 +325,21 @@ const Dashboard = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={handleCloseSnackbar}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          onClose={handleCloseSnackbar}
+          severity={snackbar.severity}
+          sx={{ width: "100%" }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };

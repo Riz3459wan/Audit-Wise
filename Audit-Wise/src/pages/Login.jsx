@@ -7,7 +7,10 @@ import {
   Paper,
   CircularProgress,
   Alert,
+  IconButton,
+  InputAdornment,
 } from "@mui/material";
+import { Visibility, VisibilityOff } from "@mui/icons-material";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 
@@ -19,8 +22,12 @@ const Login = () => {
     email: "",
     password: "",
   });
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [isLocked, setIsLocked] = useState(false);
+  const [lockTimer, setLockTimer] = useState(null);
 
   useEffect(() => {
     if (isAuthenticated && !authLoading) {
@@ -54,6 +61,11 @@ const Login = () => {
   };
 
   const handleLogin = async () => {
+    if (isLocked) {
+      setError(`Too many failed attempts. Please wait ${lockTimer} seconds.`);
+      return;
+    }
+
     if (!validateForm()) return;
 
     setIsLoading(true);
@@ -63,8 +75,27 @@ const Login = () => {
       const result = await login(form.email, form.password);
 
       if (result.success) {
+        setFailedAttempts(0);
         navigate("/dashboard", { replace: true });
       } else {
+        const newAttempts = failedAttempts + 1;
+        setFailedAttempts(newAttempts);
+
+        if (newAttempts >= 5) {
+          setIsLocked(true);
+          let timeLeft = 60;
+          const timer = setInterval(() => {
+            timeLeft--;
+            setLockTimer(timeLeft);
+            if (timeLeft <= 0) {
+              clearInterval(timer);
+              setIsLocked(false);
+              setLockTimer(null);
+              setFailedAttempts(0);
+            }
+          }, 1000);
+        }
+
         setError(result.error || "Invalid email or password");
       }
     } catch (err) {
@@ -75,9 +106,13 @@ const Login = () => {
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === "Enter") {
+    if (e.key === "Enter" && !isLoading && !isLocked) {
       handleLogin();
     }
+  };
+
+  const toggleShowPassword = () => {
+    setShowPassword((prev) => !prev);
   };
 
   if (authLoading) {
@@ -124,6 +159,12 @@ const Login = () => {
           </Alert>
         )}
 
+        {isLocked && (
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            Account temporarily locked. Try again in {lockTimer} seconds.
+          </Alert>
+        )}
+
         <TextField
           fullWidth
           label="Email"
@@ -133,27 +174,40 @@ const Login = () => {
           value={form.email}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
-          disabled={isLoading}
+          disabled={isLoading || isLocked}
           error={!!error && !form.email}
         />
 
         <TextField
           fullWidth
           label="Password"
-          type="password"
+          type={showPassword ? "text" : "password"}
           name="password"
           margin="normal"
           value={form.password}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
-          disabled={isLoading}
+          disabled={isLoading || isLocked}
           error={!!error && !form.password}
+          InputProps={{
+            endAdornment: (
+              <InputAdornment position="end">
+                <IconButton
+                  aria-label="toggle password visibility"
+                  onClick={toggleShowPassword}
+                  edge="end"
+                >
+                  {showPassword ? <VisibilityOff /> : <Visibility />}
+                </IconButton>
+              </InputAdornment>
+            ),
+          }}
         />
 
         <Button
           fullWidth
           variant="contained"
-          disabled={isLoading}
+          disabled={isLoading || isLocked}
           sx={{
             mt: 2,
             py: 1.5,

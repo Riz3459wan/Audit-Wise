@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Card,
@@ -10,31 +10,28 @@ import {
   Chip,
   Stack,
   Divider,
+  CircularProgress,
 } from "@mui/material";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import CancelIcon from "@mui/icons-material/Cancel";
 
-const PricingCard = ({
-  plan,
-  currentPlan,
-  setSelectedPlanForPayment,
-  selectedPlanForPayment,
-}) => {
+const PricingCard = ({ plan, currentPlan, setSelectedPlanForPayment }) => {
   const navigate = useNavigate();
-
-  useEffect(() => {
-    if (selectedPlanForPayment) {
-      navigate("/paymentConfirmation", {
-        state: { plan: selectedPlanForPayment },
-      });
-    }
-  }, [selectedPlanForPayment, navigate]);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const handlePayment = () => {
+    if (isProcessing) return;
+
+    setIsProcessing(true);
     try {
       setSelectedPlanForPayment(plan);
+      navigate("/paymentConfirmation", {
+        state: { plan: plan },
+        replace: true,
+      });
     } catch (err) {
       console.error("Payment initiation failed:", err);
+      setIsProcessing(false);
     }
   };
 
@@ -176,7 +173,7 @@ const PricingCard = ({
             size="large"
             fullWidth
             onClick={handlePayment}
-            disabled={isCurrentPlan || isFreePlan}
+            disabled={isCurrentPlan || isFreePlan || isProcessing}
             sx={{
               py: 1.5,
               fontWeight: 600,
@@ -189,11 +186,15 @@ const PricingCard = ({
                   : "linear-gradient(90deg, #6366f1, #38bdf8)",
             }}
           >
-            {isCurrentPlan
-              ? "Current Plan"
-              : isFreePlan
-                ? "Current Free Plan"
-                : `Upgrade to ${plan.planType}`}
+            {isProcessing ? (
+              <CircularProgress size={24} sx={{ color: "white" }} />
+            ) : isCurrentPlan ? (
+              "Current Plan"
+            ) : isFreePlan ? (
+              "Current Free Plan"
+            ) : (
+              `Upgrade to ${plan.planType}`
+            )}
           </Button>
         </CardActions>
       </Card>
