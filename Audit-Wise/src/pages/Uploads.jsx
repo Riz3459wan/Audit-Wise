@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState, useEffect, useCallback } from "react";
 import {
   Alert,
   Box,
@@ -17,6 +17,9 @@ import {
   ListItemText,
   Paper,
   Typography,
+  Snackbar,
+  useMediaQuery,
+  useTheme,
 } from "@mui/material";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import WarningIcon from "@mui/icons-material/Warning";
@@ -35,13 +38,20 @@ import { ocrService } from "../services/ocrService";
 
 const Uploads = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const fileInputRef = useRef(null);
   const [uploads, setUploads] = useState([]);
   const [recentUploads, setRecentUploads] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
   const [isAnalysing, setIsAnalysing] = useState(false);
   const [error, setError] = useState("");
+  const [snackbar, setSnackbar] = useState({
+    open: false,
+    message: "",
+    severity: "success",
+  });
   const [monthlyUsage, setMonthlyUsage] = useState({
     used: 0,
     total: 5,
@@ -49,6 +59,7 @@ const Uploads = () => {
     baseLimit: 5,
     extraUploads: 0,
   });
+  const abortControllersRef = useRef(new Map());
 
   const planLimits = {
     free: { maxUploads: PLAN_LIMITS.free, maxFileSize: 5 * 1024 * 1024 },
@@ -58,6 +69,20 @@ const Uploads = () => {
       maxFileSize: 100 * 1024 * 1024,
     },
   };
+
+  useEffect(() => {
+    return () => {
+      uploads.forEach((upload) => {
+        if (upload.previewUrl) {
+          URL.revokeObjectURL(upload.previewUrl);
+        }
+      });
+      abortControllersRef.current.forEach((controller, id) => {
+        controller.abort();
+        abortControllersRef.current.delete(id);
+      });
+    };
+  }, [uploads]);
 
   useEffect(() => {
     if (user) {
@@ -76,7 +101,12 @@ const Uploads = () => {
         .toArray();
       setRecentUploads(docs);
     } catch (err) {
-      setError("Failed to load recent uploads");
+      console.error("Failed to load recent uploads:", err);
+      setSnackbar({
+        open: true,
+        message: "Failed to load recent uploads",
+        severity: "error",
+      });
     }
   };
 
@@ -87,7 +117,11 @@ const Uploads = () => {
       setMonthlyUsage(usage);
     } catch (err) {
       console.error("Failed to load usage statistics:", err);
-      setError("Failed to load usage statistics");
+      setSnackbar({
+        open: true,
+        message: "Failed to load usage statistics",
+        severity: "error",
+      });
     }
   };
 
@@ -136,7 +170,7 @@ const Uploads = () => {
     if (validFiles.length === 0) return;
 
     const newUploads = validFiles.map((file) => ({
-      id: Math.random().toString(36).substring(7),
+      id: Math.random().toString(36).substring(7) + Date.now(),
       file,
       name: file.name,
       size: file.size,
@@ -147,13 +181,18 @@ const Uploads = () => {
       error: null,
       extractedText: null,
       aiResult: null,
+      previewUrl: URL.createObjectURL(file),
     }));
 
     setUploads((prev) => [...prev, ...newUploads]);
     setError("");
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   };
 
-  const processDocumentWithOCR = async (uploadItem, onProgress) => {
+  const processDocumentWithOCR = async (uploadItem, onProgress, signal) => {
     onProgress?.({ status: "ocr_started", progress: 10 });
 
     let result;
@@ -162,6 +201,7 @@ const Uploads = () => {
         result = await ocrService.extractTextFromPDF(
           uploadItem.file,
           onProgress,
+          signal,
         );
       } else if (
         uploadItem.file.type === "application/msword" ||
@@ -171,12 +211,18 @@ const Uploads = () => {
         result = await ocrService.extractTextFromDOC(
           uploadItem.file,
           onProgress,
+          signal,
         );
       } else {
         result = await ocrService.extractTextFromImage(
           uploadItem.file,
           onProgress,
+          signal,
         );
+      }
+
+      if (signal?.aborted) {
+        throw new Error("Aborted");
       }
 
       if (!result.success) {
@@ -185,6 +231,9 @@ const Uploads = () => {
 
       return result;
     } catch (error) {
+      if (error.message === "Aborted") {
+        throw error;
+      }
       console.error("OCR processing error:", error);
       throw new Error(error.message || "Failed to process document");
     }
@@ -194,24 +243,36 @@ const Uploads = () => {
     uploadItem,
     shouldRedirect = false,
   ) => {
+    const abortController = new AbortController();
+    abortControllersRef.current.set(uploadItem.id, abortController);
+
     setUploads((prev) =>
       prev.map((u) =>
         u.id === uploadItem.id
-          ? { ...u, status: "processing", ocrProgress: 0 }
+          ? { ...u, status: "processing", ocrProgress: 0, error: null }
           : u,
       ),
     );
 
     try {
-      const ocrResult = await processDocumentWithOCR(uploadItem, (progress) => {
-        setUploads((prev) =>
-          prev.map((u) =>
-            u.id === uploadItem.id
-              ? { ...u, ocrProgress: progress.progress }
-              : u,
-          ),
-        );
-      });
+      const ocrResult = await processDocumentWithOCR(
+        uploadItem,
+        (progress) => {
+          if (abortController.signal.aborted) return;
+          setUploads((prev) =>
+            prev.map((u) =>
+              u.id === uploadItem.id
+                ? { ...u, ocrProgress: progress.progress }
+                : u,
+            ),
+          );
+        },
+        abortController.signal,
+      );
+
+      if (abortController.signal.aborted) {
+        throw new Error("Aborted");
+      }
 
       setUploads((prev) =>
         prev.map((u) =>
@@ -229,6 +290,7 @@ const Uploads = () => {
       const aiResult = await ocrService.analyzeWithAI(
         ocrResult.text,
         (progress) => {
+          if (abortController.signal.aborted) return;
           setUploads((prev) =>
             prev.map((u) =>
               u.id === uploadItem.id
@@ -237,7 +299,12 @@ const Uploads = () => {
             ),
           );
         },
+        abortController.signal,
       );
+
+      if (abortController.signal.aborted) {
+        throw new Error("Aborted");
+      }
 
       const canSave = await checkUploadLimit(1);
       if (!canSave) {
@@ -248,7 +315,7 @@ const Uploads = () => {
         fileName: uploadItem.file.name,
         fileSize: uploadItem.file.size,
         fileType: uploadItem.file.type,
-        filePath: URL.createObjectURL(uploadItem.file),
+        filePath: uploadItem.previewUrl,
         status: "completed",
         extractedText: ocrResult.text,
         confidence: ocrResult.confidence || 0.9,
@@ -279,6 +346,7 @@ const Uploads = () => {
 
       await loadMonthlyUsage();
       await loadRecentUploads();
+      await refreshUser();
 
       setUploads((prev) =>
         prev.map((u) =>
@@ -293,6 +361,12 @@ const Uploads = () => {
             : u,
         ),
       );
+
+      setSnackbar({
+        open: true,
+        message: `Successfully analyzed: ${uploadItem.name}`,
+        severity: "success",
+      });
 
       if (shouldRedirect) {
         const fullAnalysisData = {
@@ -313,6 +387,17 @@ const Uploads = () => {
 
       return true;
     } catch (err) {
+      if (err.message === "Aborted") {
+        setUploads((prev) =>
+          prev.map((u) =>
+            u.id === uploadItem.id
+              ? { ...u, status: "pending", ocrProgress: 0, error: null }
+              : u,
+          ),
+        );
+        return false;
+      }
+
       console.error("Processing error:", err);
       setUploads((prev) =>
         prev.map((u) =>
@@ -321,7 +406,14 @@ const Uploads = () => {
             : u,
         ),
       );
+      setSnackbar({
+        open: true,
+        message: `Failed to analyze: ${err.message}`,
+        severity: "error",
+      });
       return false;
+    } finally {
+      abortControllersRef.current.delete(uploadItem.id);
     }
   };
 
@@ -342,7 +434,11 @@ const Uploads = () => {
   const handleAnalyzeAll = async () => {
     const pendingUploads = uploads.filter((u) => u.status === "pending");
     if (pendingUploads.length === 0) {
-      setError("No documents ready for processing");
+      setSnackbar({
+        open: true,
+        message: "No documents ready for processing",
+        severity: "warning",
+      });
       return;
     }
 
@@ -357,37 +453,68 @@ const Uploads = () => {
   };
 
   const handleRecentItemClick = async (doc) => {
-    const analysisResult = await db.analyseResult
-      .where("documentId")
-      .equals(doc.id)
-      .first();
+    try {
+      const analysisResult = await db.analyseResult
+        .where("documentId")
+        .equals(doc.id)
+        .first();
 
-    if (analysisResult) {
-      const fullAnalysisData = {
-        ...analysisResult,
-        documentId: doc.id,
-        documentName: doc.fileName,
-        fileName: doc.fileName,
-        fileSize: doc.fileSize,
-        fileType: doc.fileType,
-        scannedAt: doc.scannedAt,
-        extractedText: doc.extractedText,
-      };
-      sessionStorage.setItem(
-        "currentAnalysis",
-        JSON.stringify(fullAnalysisData),
-      );
-      navigate("/dashboard", { state: { analysisData: fullAnalysisData } });
-    } else {
-      setError("Analysis data not found for this document");
+      if (analysisResult) {
+        const fullAnalysisData = {
+          ...analysisResult,
+          documentId: doc.id,
+          documentName: doc.fileName,
+          fileName: doc.fileName,
+          fileSize: doc.fileSize,
+          fileType: doc.fileType,
+          scannedAt: doc.scannedAt,
+          extractedText: doc.extractedText,
+        };
+        sessionStorage.setItem(
+          "currentAnalysis",
+          JSON.stringify(fullAnalysisData),
+        );
+        navigate("/dashboard", { state: { analysisData: fullAnalysisData } });
+      } else {
+        setSnackbar({
+          open: true,
+          message: "Analysis data not found for this document",
+          severity: "warning",
+        });
+      }
+    } catch (err) {
+      setSnackbar({
+        open: true,
+        message: "Failed to load analysis",
+        severity: "error",
+      });
     }
   };
 
   const removeUpload = (id) => {
+    const upload = uploads.find((u) => u.id === id);
+    if (upload && upload.previewUrl) {
+      URL.revokeObjectURL(upload.previewUrl);
+    }
+
+    const controller = abortControllersRef.current.get(id);
+    if (controller) {
+      controller.abort();
+      abortControllersRef.current.delete(id);
+    }
+
     setUploads((prev) => prev.filter((u) => u.id !== id));
   };
 
   const clearCompleted = () => {
+    uploads.forEach((upload) => {
+      if (
+        (upload.status === "completed" || upload.status === "analysed") &&
+        upload.previewUrl
+      ) {
+        URL.revokeObjectURL(upload.previewUrl);
+      }
+    });
     setUploads((prev) =>
       prev.filter((u) => u.status !== "completed" && u.status !== "analysed"),
     );
@@ -395,11 +522,20 @@ const Uploads = () => {
 
   const deleteRecentUpload = async (docId) => {
     try {
-      await db.documents.delete(docId);
+      await dbHelpers.deleteDocument(docId, user.id);
       await loadRecentUploads();
       await loadMonthlyUsage();
+      setSnackbar({
+        open: true,
+        message: "Document deleted successfully",
+        severity: "success",
+      });
     } catch (err) {
-      setError("Failed to delete upload");
+      setSnackbar({
+        open: true,
+        message: "Failed to delete upload",
+        severity: "error",
+      });
     }
   };
 
@@ -508,9 +644,13 @@ const Uploads = () => {
     return null;
   };
 
+  const handleCloseSnackbar = () => {
+    setSnackbar({ ...snackbar, open: false });
+  };
+
   return (
     <Box>
-      <Typography variant="h4" fontWeight="bold" mb={1}>
+      <Typography variant={isMobile ? "h5" : "h4"} fontWeight="bold" mb={1}>
         Upload Documents
       </Typography>
       <Typography variant="body2" color="textSecondary" mb={3}>
@@ -523,7 +663,7 @@ const Uploads = () => {
         </Alert>
       )}
 
-      <Grid container spacing={3}>
+      <Grid container spacing={isMobile ? 2 : 3}>
         <Grid item xs={12} md={7}>
           <Box
             sx={{
@@ -535,7 +675,7 @@ const Uploads = () => {
           >
             <Paper
               sx={{
-                p: 4,
+                p: isMobile ? 2 : 4,
                 textAlign: "center",
                 border: "2px dashed",
                 borderColor:
@@ -570,7 +710,7 @@ const Uploads = () => {
               />
               <CloudUploadIcon
                 sx={{
-                  fontSize: 60,
+                  fontSize: { xs: 40, sm: 60 },
                   color: monthlyUsage.remaining <= 0 ? "#f44336" : "#6366f1",
                   mb: 2,
                 }}
@@ -618,6 +758,8 @@ const Uploads = () => {
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
+                    flexWrap: "wrap",
+                    gap: 1,
                   }}
                 >
                   <Typography variant="h6">
@@ -807,7 +949,7 @@ const Uploads = () => {
                   ? navigator.onLine
                     ? "Running Cloud AI Analysis..."
                     : "Running Local Analysis..."
-                  : "Analyze All Documents"}
+                  : `Analyze All (${uploads.filter((u) => u.status === "pending").length}) Documents`}
               </Button>
             )}
           </Box>
@@ -1022,6 +1164,21 @@ const Uploads = () => {
           </Typography>
         </Paper>
       )}
+
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={handleCloseSnackbar}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          onClose={handleCloseSnackbar}
+          severity={snackbar.severity}
+          sx={{ width: "100%" }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };

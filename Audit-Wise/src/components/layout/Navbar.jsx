@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
   AppBar,
   Toolbar,
@@ -16,6 +16,9 @@ import {
   DialogContentText,
   DialogActions,
   Button,
+  CircularProgress,
+  useMediaQuery,
+  useTheme as useMuiTheme,
 } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import SearchIcon from "@mui/icons-material/Search";
@@ -31,17 +34,20 @@ const Navbar = () => {
   const navigate = useNavigate();
   const { darkMode, toggleTheme } = useTheme();
   const { user, logout } = useAuth();
+  const muiTheme = useMuiTheme();
+  const isMobile = useMediaQuery(muiTheme.breakpoints.down("sm"));
   const [anchorEl, setAnchorEl] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
   const [logoutError, setLogoutError] = useState("");
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const debouncedSearch = useDebounce(searchQuery, 500);
   const open = Boolean(anchorEl);
 
   useEffect(() => {
     if (debouncedSearch) {
-      console.log("Searching for:", debouncedSearch);
+      console.debug("Searching for:", debouncedSearch);
     }
   }, [debouncedSearch]);
 
@@ -54,12 +60,12 @@ const Navbar = () => {
     setAnchorEl(event.currentTarget);
   };
 
-  const handleClose = () => {
+  const handleMenuClose = () => {
     setAnchorEl(null);
   };
 
   const handleSetting = () => {
-    handleClose();
+    handleMenuClose();
     navigate("/profileSetting");
   };
 
@@ -68,24 +74,39 @@ const Navbar = () => {
   };
 
   const handleLogoutClick = () => {
-    handleClose();
+    handleMenuClose();
     setLogoutDialogOpen(true);
     setLogoutError("");
   };
 
   const handleLogoutConfirm = async () => {
+    setIsLoggingOut(true);
+    setLogoutError("");
     try {
       await logout();
       setLogoutDialogOpen(false);
       navigate("/", { replace: true });
     } catch (err) {
       setLogoutError("Failed to logout. Please try again.");
+    } finally {
+      setIsLoggingOut(false);
     }
   };
 
   const handleLogoutCancel = () => {
     setLogoutDialogOpen(false);
     setLogoutError("");
+  };
+
+  const getInitials = (name) => {
+    if (!name) return "U";
+    return name.charAt(0).toUpperCase();
+  };
+
+  const handleKeyDown = (event) => {
+    if (event.key === "Escape" && open) {
+      handleMenuClose();
+    }
   };
 
   return (
@@ -97,9 +118,16 @@ const Navbar = () => {
           color: darkMode ? "#fff" : "#000",
           boxShadow: "none",
           borderBottom: "1px solid #e5e7eb",
+          ml: { xs: 0, md: 0 },
         }}
       >
-        <Toolbar sx={{ display: "flex", justifyContent: "space-between" }}>
+        <Toolbar
+          sx={{
+            display: "flex",
+            justifyContent: "space-between",
+            minHeight: { xs: 56, sm: 64 },
+          }}
+        >
           <Box
             sx={{
               display: "flex",
@@ -107,7 +135,8 @@ const Navbar = () => {
               backgroundColor: darkMode ? "#1e293b" : "#e7eaee",
               padding: "5px 10px",
               borderRadius: "10px",
-              width: "300px",
+              width: isMobile ? "150px" : "300px",
+              transition: "width 0.2s ease",
             }}
           >
             <SearchIcon sx={{ color: "#0096d6" }} />
@@ -120,11 +149,24 @@ const Navbar = () => {
               }}
               value={searchQuery}
               onChange={(e) => handleSearch(e.target.value)}
+              aria-label="Search"
             />
           </Box>
 
-          <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-            <IconButton onClick={toggleTheme}>
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: { xs: 1, sm: 2 },
+            }}
+          >
+            <IconButton
+              onClick={toggleTheme}
+              aria-label={
+                darkMode ? "Switch to light mode" : "Switch to dark mode"
+              }
+              size={isMobile ? "small" : "medium"}
+            >
               {darkMode ? (
                 <LightModeIcon sx={{ color: "white" }} />
               ) : (
@@ -134,23 +176,41 @@ const Navbar = () => {
 
             <Box
               onClick={handleMenuOpen}
+              onKeyDown={handleKeyDown}
               sx={{
                 display: "flex",
                 alignItems: "center",
                 gap: 1,
                 cursor: "pointer",
               }}
+              aria-label="User menu"
+              role="button"
+              tabIndex={0}
             >
-              <Avatar sx={{ width: 32, height: 32, bgcolor: "#6366f1" }}>
-                {user?.name?.charAt(0).toUpperCase() || "A"}
+              <Avatar
+                sx={{
+                  width: { xs: 28, sm: 32 },
+                  height: { xs: 28, sm: 32 },
+                  bgcolor: "#6366f1",
+                }}
+              >
+                {getInitials(user?.name)}
               </Avatar>
+              {!isMobile && (
+                <Typography
+                  variant="body2"
+                  sx={{ display: { xs: "none", sm: "block" } }}
+                >
+                  {user?.name?.split(" ")[0] || "User"}
+                </Typography>
+              )}
             </Box>
 
             <Menu
               sx={{ marginTop: 1 }}
               anchorEl={anchorEl}
               open={open}
-              onClose={handleClose}
+              onClose={handleMenuClose}
               anchorOrigin={{
                 vertical: "bottom",
                 horizontal: "right",
@@ -170,7 +230,7 @@ const Navbar = () => {
                     bgcolor: "#6366f1",
                   }}
                 >
-                  {user?.name?.charAt(0).toUpperCase() || "A"}
+                  {getInitials(user?.name)}
                 </Avatar>
                 <Typography fontWeight="bold">
                   {user?.name || "User Name"}
@@ -229,15 +289,24 @@ const Navbar = () => {
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleLogoutCancel} color="primary">
+          <Button
+            onClick={handleLogoutCancel}
+            color="primary"
+            disabled={isLoggingOut}
+          >
             Cancel
           </Button>
           <Button
             onClick={handleLogoutConfirm}
             color="error"
             variant="contained"
+            disabled={isLoggingOut}
           >
-            Logout
+            {isLoggingOut ? (
+              <CircularProgress size={20} sx={{ color: "white" }} />
+            ) : (
+              "Logout"
+            )}
           </Button>
         </DialogActions>
       </Dialog>

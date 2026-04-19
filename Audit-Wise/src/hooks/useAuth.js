@@ -2,15 +2,34 @@ import { useCallback, useEffect, useState } from "react";
 import { db, dbHelpers, PLAN_LIMITS } from "../database/db";
 import { tabSession } from "../utils/tabSession";
 
+const simpleHash = async (password) => {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password);
+  const hash = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(hash))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+};
+
 export const useAuth = () => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [sessionTimeout, setSessionTimeout] = useState(null);
 
   const login = useCallback(async (email, password) => {
     try {
       const foundUser = await dbHelpers.getUserByEmail(email);
 
-      if (foundUser && foundUser.password === password) {
+      if (!foundUser) {
+        return { success: false, error: "Invalid credentials" };
+      }
+
+      const hashedPassword = await simpleHash(password);
+
+      if (
+        foundUser.password === password ||
+        foundUser.password === hashedPassword
+      ) {
         const sessionData = {
           userId: foundUser.id,
           email: foundUser.email,
@@ -45,6 +64,11 @@ export const useAuth = () => {
       await dbHelpers.logAudit(user.id, "LOGOUT", {});
     }
 
+    if (sessionTimeout) {
+      clearTimeout(sessionTimeout);
+      setSessionTimeout(null);
+    }
+
     tabSession.clear();
     setUser(null);
 
@@ -54,7 +78,7 @@ export const useAuth = () => {
       userId: null,
       tabId: null,
     });
-  }, [user]);
+  }, [user, sessionTimeout]);
 
   const checkAuth = useCallback(async () => {
     setLoading(true);
@@ -71,6 +95,25 @@ export const useAuth = () => {
     }
     setLoading(false);
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const checkSessionActivity = () => {
+      const session = tabSession.get();
+      if (session && session.lastActive) {
+        const inactiveTime = Date.now() - session.lastActive;
+        const timeoutMs = 30 * 60 * 1000; // 30 minutes
+
+        if (inactiveTime > timeoutMs) {
+          logout();
+        }
+      }
+    };
+
+    const interval = setInterval(checkSessionActivity, 60 * 1000); // Check every minute
+    return () => clearInterval(interval);
+  }, [user, logout]);
 
   useEffect(() => {
     checkAuth();
@@ -149,6 +192,13 @@ export const useAuth = () => {
     [user],
   );
 
+  const refreshUser = useCallback(async () => {
+    if (user) {
+      const updatedUser = await db.users.get(user.id);
+      setUser(updatedUser);
+    }
+  }, [user]);
+
   return {
     user,
     loading,
@@ -157,5 +207,6 @@ export const useAuth = () => {
     isAuthenticated: !!user,
     updateUserPlan,
     addExtraUploads,
+    refreshUser,
   };
 };

@@ -6,11 +6,21 @@ import { Outlet } from "react-router-dom";
 
 const Landing = () => {
   return (
-    <Box sx={{ display: "flex" }}>
+    <Box sx={{ display: "flex", minHeight: "100vh" }}>
       <Sidebar />
-      <Box sx={{ flexGrow: 1 }}>
+      <Box
+        sx={{
+          flexGrow: 1,
+          width: { xs: "100%", md: "calc(100% - 260px)" },
+        }}
+      >
         <Navbar />
-        <Box sx={{ p: 3 }}>
+        <Box
+          sx={{
+            p: { xs: 2, sm: 3, md: 4 },
+            mt: { xs: 0, sm: 0 },
+          }}
+        >
           <Outlet />
         </Box>
       </Box>
