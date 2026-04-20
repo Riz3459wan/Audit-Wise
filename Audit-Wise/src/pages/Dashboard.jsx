@@ -55,7 +55,6 @@ import { useNavigate } from "react-router-dom";
 import { db, dbHelpers } from "../database/db";
 import { useAuth } from "../hooks/useAuth";
 
-// Mock data for initial testing/fallback
 const MOCK_FINANCIAL_DATA = {
   totalRevenue: 125000,
   totalExpenses: 78000,
@@ -95,7 +94,7 @@ const MOCK_FINANCIAL_DATA = {
   ],
 };
 
-const FinancialDashboard = () => {
+const Dashboard = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const theme = useTheme();
@@ -119,13 +118,11 @@ const FinancialDashboard = () => {
     setError("");
 
     try {
-      // Load recent documents from DB
       const docs = await dbHelpers.getUserDocuments(user.id, 10);
 
       if (docs.length > 0) {
         setRecentDocuments(docs);
 
-        // Load the most recent document's analysis
         const latestDoc = docs[0];
         const analysis = await dbHelpers.getAnalyseResultByDocumentId(
           latestDoc.id
@@ -135,15 +132,12 @@ const FinancialDashboard = () => {
           setSelectedDocument(latestDoc);
           setSelectedAnalysis(analysis);
 
-          // Calculate financial metrics from analysis data
           const metrics = calculateFinancialMetrics(latestDoc, analysis);
           setFinancialMetrics(metrics);
         } else {
-          // No analysis found, use mock data
           setFinancialMetrics(MOCK_FINANCIAL_DATA);
         }
       } else {
-        // No documents in DB, use mock data
         setFinancialMetrics(MOCK_FINANCIAL_DATA);
       }
     } catch (err) {
@@ -156,21 +150,17 @@ const FinancialDashboard = () => {
   };
 
   const calculateFinancialMetrics = (document, analysis) => {
-    // Extract financial data from the analyzed text
     const extractedText = analysis.extractedText || "";
     const keyFindings = tryParseJSON(analysis.keyFindings) || [];
     const recommendations = tryParseJSON(analysis.recommendations) || [];
 
-    // Try to extract numerical data from text
     const numbers = extractNumbers(extractedText);
 
-    // Calculate metrics based on available data
     let totalRevenue = 0;
     let totalExpenses = 0;
     let netProfit = 0;
     let profitMargin = 0;
 
-    // Simple heuristic: assume larger numbers are revenue/expenses
     if (numbers.length >= 2) {
       const sorted = numbers.sort((a, b) => b - a);
       totalRevenue = sorted[0] || 0;
@@ -179,16 +169,9 @@ const FinancialDashboard = () => {
       profitMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
     }
 
-    // Generate trend data from available info
     const revenueData = generateTrendData(totalRevenue, totalExpenses);
-
-    // Generate category breakdown
     const categoryData = generateCategoryData(totalExpenses);
-
-    // Map risk level to score
     const riskScore = mapRiskLevelToScore(analysis.riskLevel);
-
-    // Extract anomalies info
     const anomaliesCount = countAnomaliesInText(extractedText, keyFindings);
 
     return {
@@ -209,14 +192,12 @@ const FinancialDashboard = () => {
       recommendations: recommendations.map((r) =>
         typeof r === "string" ? r : r.recommendation || ""
       ),
-      sentiment: analysis.sentiment || "Neutral",
       confidence: analysis.confidence || 0.8,
       wordCount: analysis.wordCount || 0,
       documentType: detectDocumentType(extractedText),
     };
   };
 
-  // Helper functions
   const tryParseJSON = (str) => {
     if (!str) return [];
     if (Array.isArray(str)) return str;
@@ -302,7 +283,6 @@ const FinancialDashboard = () => {
   };
 
   const generateTrendData = (revenue, expenses) => {
-    // Generate 3-month trend with some variance
     const months = ["Month 1", "Month 2", "Month 3"];
     return months.map((month, idx) => {
       const variance = 0.85 + Math.random() * 0.3;
@@ -318,7 +298,6 @@ const FinancialDashboard = () => {
   };
 
   const generateCategoryData = (totalExpenses) => {
-    // Generate expense categories
     const categories = [
       { name: "Operations", percentage: 0.4 },
       { name: "Salaries", percentage: 0.3 },
@@ -402,7 +381,6 @@ const FinancialDashboard = () => {
     }
   };
 
-  // Key Metrics Cards Component
   const KeyMetricsGrid = ({ metrics }) => {
     const metricsData = [
       {
@@ -433,13 +411,7 @@ const FinancialDashboard = () => {
         bgColor: getRiskColor(metrics.riskScore),
         textColor: "#ffffff",
       },
-      {
-        title: "Sentiment",
-        value: metrics.sentiment || "Neutral",
-        icon: <TimelineIcon />,
-        bgColor: getSeverityColor(metrics.severity),
-        textColor: "#ffffff",
-      },
+
       {
         title: "Anomalies",
         value: metrics.anomaliesCount,
@@ -501,7 +473,6 @@ const FinancialDashboard = () => {
     );
   };
 
-  // Revenue Chart Component
   const RevenueChart = ({ data, currency }) => {
     if (!data || data.length === 0) {
       return (
@@ -576,7 +547,6 @@ const FinancialDashboard = () => {
     );
   };
 
-  // Expense Distribution Chart
   const ExpenseDistribution = ({ data, currency }) => {
     if (!data || data.length === 0) {
       return (
@@ -625,7 +595,6 @@ const FinancialDashboard = () => {
     );
   };
 
-  // Risk Assessment Component
   const RiskAssessment = ({ metrics }) => {
     const riskScore = metrics.riskScore || 0;
 
@@ -711,7 +680,6 @@ const FinancialDashboard = () => {
     );
   };
 
-  // Insights Component
   const InsightsPanel = ({ metrics }) => {
     return (
       <Grid container spacing={3}>
@@ -815,7 +783,7 @@ const FinancialDashboard = () => {
         <Button
           variant="contained"
           size="large"
-          onClick={() => navigate("/uploads")}
+          onClick={() => navigate("/upload")}
           startIcon={<CloudUploadIcon />}
         >
           Upload Documents
@@ -826,7 +794,6 @@ const FinancialDashboard = () => {
 
   return (
     <Box>
-      {/* Header */}
       <Box
         sx={{
           display: "flex",
@@ -854,7 +821,7 @@ const FinancialDashboard = () => {
           <Button
             variant="outlined"
             startIcon={<CloudUploadIcon />}
-            onClick={() => navigate("/uploads")}
+            onClick={() => navigate("/upload")}
           >
             Upload More
           </Button>
@@ -868,9 +835,7 @@ const FinancialDashboard = () => {
       )}
 
       <Grid container spacing={3}>
-        {/* Main Dashboard Content */}
         <Grid item xs={12} md={9}>
-          {/* Document Header */}
           {selectedDocument && (
             <Card
               sx={{
@@ -921,7 +886,6 @@ const FinancialDashboard = () => {
             </Card>
           )}
 
-          {/* Summary Alert */}
           {selectedAnalysis?.summary && (
             <Alert
               severity="info"
@@ -936,10 +900,8 @@ const FinancialDashboard = () => {
             </Alert>
           )}
 
-          {/* Key Metrics */}
           <KeyMetricsGrid metrics={financialMetrics} />
 
-          {/* Charts Row */}
           <Grid container spacing={3} sx={{ mb: 3 }}>
             <Grid item xs={12} lg={6}>
               <RevenueChart
@@ -955,16 +917,13 @@ const FinancialDashboard = () => {
             </Grid>
           </Grid>
 
-          {/* Risk Assessment */}
           <Box sx={{ mb: 3 }}>
             <RiskAssessment metrics={financialMetrics} />
           </Box>
 
-          {/* Insights Panel */}
           <InsightsPanel metrics={financialMetrics} />
         </Grid>
 
-        {/* Sidebar - Recent Documents */}
         <Grid item xs={12} md={3}>
           <Card sx={{ borderRadius: 3, boxShadow: 2, position: "sticky", top: 20 }}>
             <Box
@@ -1025,7 +984,7 @@ const FinancialDashboard = () => {
                   variant="outlined"
                   size="small"
                   sx={{ mt: 2 }}
-                  onClick={() => navigate("/uploads")}
+                  onClick={() => navigate("/upload")}
                 >
                   Upload Now
                 </Button>
@@ -1038,4 +997,4 @@ const FinancialDashboard = () => {
   );
 };
 
-export default FinancialDashboard;
+export default Dashboard;
