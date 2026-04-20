@@ -24,7 +24,15 @@ const Login = () => {
 
   useEffect(() => {
     if (isAuthenticated && !authLoading) {
-      navigate("/dashboard", { replace: true });
+      const pendingData = sessionStorage.getItem("pendingTrialData");
+      if (pendingData) {
+        sessionStorage.removeItem("pendingTrialData");
+        navigate("/trial-upload", {
+          state: { pendingData: JSON.parse(pendingData) },
+        });
+      } else {
+        navigate("/dashboard", { replace: true });
+      }
     }
   }, [isAuthenticated, authLoading, navigate]);
 
@@ -63,7 +71,11 @@ const Login = () => {
       const result = await login(form.email, form.password);
 
       if (result.success) {
-        navigate("/dashboard", { replace: true });
+        if (result.hasPendingTrialData) {
+          navigate("/trial-upload");
+        } else {
+          navigate("/dashboard", { replace: true });
+        }
       } else {
         setError(result.error || "Invalid email or password");
       }
@@ -100,18 +112,27 @@ const Login = () => {
     <Box
       sx={{
         height: "100vh",
+        width: "100vw",
         display: "flex",
         justifyContent: "center",
         alignItems: "center",
         background: "linear-gradient(135deg, #6366f1, #38bdf8)",
+        margin: 0,
+        padding: 0,
+        position: "fixed",
+        top: 0,
+        left: 0,
       }}
     >
       <Paper
-        elevation={6}
+        elevation={3}
         sx={{
           padding: 4,
           width: 350,
           borderRadius: "15px",
+          border: "none",
+          outline: "none",
+          boxShadow: "0 8px 32px rgba(0,0,0,0.1)",
         }}
       >
         <Typography variant="h5" fontWeight="bold" mb={2}>

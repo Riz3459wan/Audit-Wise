@@ -295,20 +295,7 @@ const Uploads = () => {
       );
 
       if (shouldRedirect) {
-        const fullAnalysisData = {
-          ...analysisData,
-          documentId: documentId,
-          documentName: uploadItem.name,
-          fileName: uploadItem.name,
-          fileSize: uploadItem.size,
-          fileType: uploadItem.type,
-          scannedAt: new Date().toISOString(),
-        };
-        sessionStorage.setItem(
-          "currentAnalysis",
-          JSON.stringify(fullAnalysisData),
-        );
-        navigate("/dashboard", { state: { analysisData: fullAnalysisData } });
+        navigate("/dashboard");
       }
 
       return true;
@@ -363,21 +350,7 @@ const Uploads = () => {
       .first();
 
     if (analysisResult) {
-      const fullAnalysisData = {
-        ...analysisResult,
-        documentId: doc.id,
-        documentName: doc.fileName,
-        fileName: doc.fileName,
-        fileSize: doc.fileSize,
-        fileType: doc.fileType,
-        scannedAt: doc.scannedAt,
-        extractedText: doc.extractedText,
-      };
-      sessionStorage.setItem(
-        "currentAnalysis",
-        JSON.stringify(fullAnalysisData),
-      );
-      navigate("/dashboard", { state: { analysisData: fullAnalysisData } });
+      navigate("/dashboard");
     } else {
       setError("Analysis data not found for this document");
     }
@@ -396,6 +369,7 @@ const Uploads = () => {
   const deleteRecentUpload = async (docId) => {
     try {
       await db.documents.delete(docId);
+      await db.analyseResult.where("documentId").equals(docId).delete();
       await loadRecentUploads();
       await loadMonthlyUsage();
     } catch (err) {
@@ -663,7 +637,6 @@ const Uploads = () => {
                       <ListItemText
                         primary={
                           <Box
-                            component="span"
                             sx={{
                               display: "flex",
                               alignItems: "center",
@@ -767,7 +740,7 @@ const Uploads = () => {
                                   onClick={() => handleAnalyzeAndView(upload)}
                                   disabled={isAnalysing}
                                 >
-                                  Analyze & View On Dashboard
+                                  Analyze & View Dashboard
                                 </Button>
                               </Box>
                             )}
@@ -828,7 +801,7 @@ const Uploads = () => {
                   p: 2,
                   borderBottom: "1px solid",
                   borderColor: "divider",
-                  bgcolor: "primary.main",
+                  bgcolor: "#6366f1",
                   color: "white",
                 }}
               >

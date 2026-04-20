@@ -7,13 +7,19 @@ import {
   Paper,
   CircularProgress,
   Alert,
+  InputAdornment,
+  IconButton,
 } from "@mui/material";
 import { useNavigate, Link } from "react-router-dom";
 import { db } from "../database/db";
+import PersonIcon from "@mui/icons-material/Person";
+import EmailIcon from "@mui/icons-material/Email";
+import LockIcon from "@mui/icons-material/Lock";
+import VisibilityIcon from "@mui/icons-material/Visibility";
+import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
 
 const Register = () => {
   const navigate = useNavigate();
-
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -22,6 +28,9 @@ const Register = () => {
   });
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [openSuccess, setOpenSuccess] = useState(false);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -85,7 +94,7 @@ const Register = () => {
         monthlyResetDate: new Date().toISOString(),
       });
 
-      navigate("/");
+      setOpenSuccess(true);
     } catch (err) {
       setError("Registration failed. Please try again.");
     } finally {
@@ -103,15 +112,31 @@ const Register = () => {
     <Box
       sx={{
         height: "100vh",
+        width: "100vw",
         display: "flex",
         justifyContent: "center",
         alignItems: "center",
-        background: "linear-gradient(135deg, #38bdf8, #6366f1)",
+        background: "linear-gradient(135deg, #6366f1, #38bdf8)",
+        margin: 0,
+        padding: 0,
+        position: "fixed",
+        top: 0,
+        left: 0,
       }}
     >
-      <Paper sx={{ p: 4, width: 350, borderRadius: "15px" }}>
-        <Typography variant="h5" fontWeight="bold" mb={2}>
-          Register
+      <Paper
+        elevation={3}
+        sx={{
+          padding: 4,
+          width: 400,
+          borderRadius: "15px",
+          border: "none",
+          outline: "none",
+          boxShadow: "0 8px 32px rgba(0,0,0,0.1)",
+        }}
+      >
+        <Typography variant="h5" fontWeight="bold" mb={2} align="center">
+          Create Account
         </Typography>
 
         {error && (
@@ -122,13 +147,21 @@ const Register = () => {
 
         <TextField
           fullWidth
-          label="Name"
+          label="Full Name"
           name="name"
           margin="normal"
           value={form.name}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           disabled={isLoading}
+          error={!!error && !form.name}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <PersonIcon sx={{ color: "#6366f1" }} />
+              </InputAdornment>
+            ),
+          }}
         />
 
         <TextField
@@ -141,31 +174,84 @@ const Register = () => {
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           disabled={isLoading}
+          error={!!error && !form.email}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <EmailIcon sx={{ color: "#6366f1" }} />
+              </InputAdornment>
+            ),
+          }}
         />
 
         <TextField
           fullWidth
           label="Password"
-          type="password"
+          type={showPassword ? "text" : "password"}
           name="password"
           margin="normal"
           value={form.password}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           disabled={isLoading}
+          error={!!error && !form.password}
           helperText="Minimum 6 characters"
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <LockIcon sx={{ color: "#6366f1" }} />
+              </InputAdornment>
+            ),
+            endAdornment: (
+              <InputAdornment position="end">
+                <IconButton
+                  onClick={() => setShowPassword(!showPassword)}
+                  edge="end"
+                >
+                  {showPassword ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                </IconButton>
+              </InputAdornment>
+            ),
+          }}
         />
 
         <TextField
           fullWidth
           label="Confirm Password"
-          type="password"
+          type={showConfirmPassword ? "text" : "password"}
           name="confirmPassword"
           margin="normal"
           value={form.confirmPassword}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           disabled={isLoading}
+          error={!!error && form.confirmPassword !== form.password}
+          helperText={
+            form.password !== form.confirmPassword && form.confirmPassword
+              ? "Passwords do not match"
+              : ""
+          }
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <LockIcon sx={{ color: "#6366f1" }} />
+              </InputAdornment>
+            ),
+            endAdornment: (
+              <InputAdornment position="end">
+                <IconButton
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  edge="end"
+                >
+                  {showConfirmPassword ? (
+                    <VisibilityOffIcon />
+                  ) : (
+                    <VisibilityIcon />
+                  )}
+                </IconButton>
+              </InputAdornment>
+            ),
+          }}
         />
 
         <Button
@@ -173,9 +259,9 @@ const Register = () => {
           variant="contained"
           disabled={isLoading}
           sx={{
-            mt: 2,
+            mt: 3,
             py: 1.5,
-            background: "linear-gradient(90deg, #38bdf8, #6366f1)",
+            background: "linear-gradient(90deg, #6366f1, #38bdf8)",
           }}
           onClick={handleRegister}
         >
@@ -191,7 +277,7 @@ const Register = () => {
           <Link
             to="/"
             style={{
-              color: "#6366f1",
+              color: "#38bdf8",
               fontWeight: "bold",
               textDecoration: "none",
             }}
@@ -200,6 +286,55 @@ const Register = () => {
           </Link>
         </Typography>
       </Paper>
+
+      {openSuccess && (
+        <Box
+          sx={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: "rgba(0,0,0,0.5)",
+            zIndex: 9999,
+          }}
+          onClick={() => navigate("/")}
+        >
+          <Paper
+            elevation={3}
+            sx={{
+              p: 4,
+              maxWidth: 400,
+              textAlign: "center",
+              borderRadius: "15px",
+              border: "none",
+              outline: "none",
+            }}
+          >
+            <Typography variant="h5" fontWeight="bold" gutterBottom>
+              Registration Successful!
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+              Your account has been created. Click anywhere to continue to
+              login.
+            </Typography>
+            <Button
+              fullWidth
+              variant="contained"
+              onClick={() => navigate("/login")}
+              sx={{
+                py: 1.5,
+                background: "linear-gradient(90deg, #6366f1, #38bdf8)",
+              }}
+            >
+              Go to Login
+            </Button>
+          </Paper>
+        </Box>
+      )}
     </Box>
   );
 };

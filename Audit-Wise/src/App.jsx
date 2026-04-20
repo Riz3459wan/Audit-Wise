@@ -3,7 +3,8 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
 import Login from "./pages/Login";
 import Register from "./pages/Register";
-import Landing from "./pages/Landing";
+import LandingPage from "./pages/LandingPage";
+import TrialUpload from "./pages/TrialUpload";
 import Uploads from "./pages/Uploads";
 import Reports from "./pages/Reports";
 import Pricing from "./pages/Pricing";
@@ -13,6 +14,7 @@ import ProfileSettings from "./pages/ProfileSettings";
 import PaymentConfirmation from "./pages/PaymentConfirmation";
 import PaymentSuccess from "./pages/PaymentSuccess";
 import { tabSession } from "./utils/tabSession";
+import Layout from "./components/layout/Layout";
 
 const PrivateRoute = ({ children }) => {
   const [isAuth, setIsAuth] = useState(null);
@@ -34,7 +36,7 @@ const PrivateRoute = ({ children }) => {
 const ProtectedLayout = () => {
   return (
     <PrivateRoute>
-      <Landing />
+      <Layout />
     </PrivateRoute>
   );
 };
@@ -48,8 +50,10 @@ function App() {
       }}
     >
       <Routes>
-        <Route path="/" element={<Login />} />
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/trial-upload" element={<TrialUpload />} />
         <Route path="/paymentConfirmation" element={<PaymentConfirmation />} />
         <Route path="/paymentSuccess" element={<PaymentSuccess />} />
 

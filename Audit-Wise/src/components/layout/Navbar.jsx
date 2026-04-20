@@ -16,28 +16,54 @@ import {
   DialogContentText,
   DialogActions,
   Button,
+  Drawer,
+  List,
+  ListItem,
+  ListItemButton,
+  ListItemIcon,
+  ListItemText,
+  Chip,
+  useMediaQuery,
+  useTheme as useMuiTheme,
 } from "@mui/material";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import SearchIcon from "@mui/icons-material/Search";
 import DarkModeIcon from "@mui/icons-material/DarkMode";
 import LightModeIcon from "@mui/icons-material/LightMode";
 import SettingsApplicationsIcon from "@mui/icons-material/SettingsApplications";
 import LogoutIcon from "@mui/icons-material/Logout";
+import DashboardIcon from "@mui/icons-material/Dashboard";
+import UploadFileIcon from "@mui/icons-material/UploadFile";
+import BarChartIcon from "@mui/icons-material/BarChart";
+import AddCardIcon from "@mui/icons-material/AddCard";
+import SettingsIcon from "@mui/icons-material/Settings";
+import MenuIcon from "@mui/icons-material/Menu";
+import ShieldOutlinedIcon from "@mui/icons-material/ShieldOutlined";
 import useDebounce from "../../hooks/UseDebounce";
 import { useTheme } from "../../context/ThemeContext";
 import { useAuth } from "../../hooks/useAuth";
 
 const Navbar = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const muiTheme = useMuiTheme();
+  const isMobile = useMediaQuery(muiTheme.breakpoints.down("md"));
   const { darkMode, toggleTheme } = useTheme();
   const { user, logout } = useAuth();
   const [anchorEl, setAnchorEl] = useState(null);
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
   const [logoutError, setLogoutError] = useState("");
 
   const debouncedSearch = useDebounce(searchQuery, 500);
   const open = Boolean(anchorEl);
+
+  const menuItems = [
+    { text: "Dashboard", icon: <DashboardIcon />, path: "/dashboard" },
+    { text: "Reports", icon: <BarChartIcon />, path: "/report" },
+    { text: "Settings", icon: <SettingsIcon />, path: "/setting" },
+  ];
 
   useEffect(() => {
     if (debouncedSearch) {
@@ -56,6 +82,13 @@ const Navbar = () => {
 
   const handleClose = () => {
     setAnchorEl(null);
+  };
+
+  const handleNavigation = (path) => {
+    navigate(path);
+    if (isMobile) {
+      setMobileDrawerOpen(false);
+    }
   };
 
   const handleSetting = () => {
@@ -88,47 +121,192 @@ const Navbar = () => {
     setLogoutError("");
   };
 
+  const handleUpgradePlan = () => {
+    navigate("/price");
+    if (isMobile) {
+      setMobileDrawerOpen(false);
+    }
+  };
+
+  const isActive = (path) => {
+    return location.pathname === path;
+  };
+
+  const drawerContent = (
+    <Box sx={{ width: 280, p: 2 }}>
+      <Box sx={{ display: "flex", alignItems: "center", mb: 3, px: 1 }}>
+        <ShieldOutlinedIcon sx={{ mr: 1, color: "#6366f1", fontSize: 32 }} />
+        <Typography variant="h6" fontWeight="bold">
+          Audit<span style={{ color: "#6366f1" }}>Wise</span>
+        </Typography>
+      </Box>
+
+      <Divider sx={{ mb: 2 }} />
+
+      <List>
+        {menuItems.map((item) => (
+          <ListItem key={item.text} disablePadding>
+            <ListItemButton
+              onClick={() => handleNavigation(item.path)}
+              sx={{
+                borderRadius: "10px",
+                mb: 1,
+                backgroundColor: isActive(item.path)
+                  ? darkMode
+                    ? "rgba(99, 102, 241, 0.2)"
+                    : "#e0e7ff"
+                  : "transparent",
+                "&:hover": {
+                  backgroundColor: darkMode ? "#1e293b" : "#f1f5f9",
+                },
+              }}
+            >
+              <ListItemIcon
+                sx={{ color: isActive(item.path) ? "#6366f1" : "#94a3b8" }}
+              >
+                {item.icon}
+              </ListItemIcon>
+              <ListItemText
+                primary={item.text}
+                primaryTypographyProps={{
+                  sx: {
+                    color: isActive(item.path) ? "#6366f1" : "inherit",
+                    fontWeight: isActive(item.path) ? 600 : 400,
+                  },
+                }}
+              />
+            </ListItemButton>
+          </ListItem>
+        ))}
+      </List>
+
+      <Box sx={{ mt: 2, px: 1 }}>
+        <Button
+          variant="contained"
+          fullWidth
+          onClick={handleUpgradePlan}
+          sx={{
+            background: "linear-gradient(90deg, #38bdf8, #6366f1)",
+            color: "#fff",
+            fontWeight: "bold",
+            borderRadius: "10px",
+            padding: "10px",
+            "&:hover": {
+              background: "linear-gradient(90deg, #0ea5e9, #4f46e5)",
+            },
+          }}
+        >
+          Upgrade Plan
+        </Button>
+      </Box>
+
+      <Box sx={{ mt: "auto", pt: 3 }}>
+        <Divider sx={{ mb: 2 }} />
+        <Box sx={{ px: 1, py: 1 }}>
+          <Typography variant="body2" color="textSecondary" gutterBottom>
+            Logged in as
+          </Typography>
+          <Typography variant="body2" fontWeight="medium" noWrap>
+            {user?.name || "User Name"}
+          </Typography>
+          <Typography variant="caption" color="textSecondary" noWrap>
+            {user?.email || "user@gmail.com"}
+          </Typography>
+          <Chip
+            label={`${user?.plan || "Free"} Plan`}
+            size="small"
+            sx={{ mt: 1, bgcolor: "#6366f1", color: "white" }}
+          />
+        </Box>
+      </Box>
+    </Box>
+  );
+
   return (
     <>
       <AppBar
-        position="static"
+        position="sticky"
         sx={{
           background: darkMode ? "#0f172a" : "#ffffff",
           color: darkMode ? "#fff" : "#000",
-          boxShadow: "none",
-          borderBottom: "1px solid #e5e7eb",
+          boxShadow: "0 1px 3px 0 rgb(0 0 0 / 0.1)",
+          borderBottom: "1px solid",
+          borderColor: "divider",
         }}
       >
         <Toolbar sx={{ display: "flex", justifyContent: "space-between" }}>
-          <Box
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              backgroundColor: darkMode ? "#1e293b" : "#e7eaee",
-              padding: "5px 10px",
-              borderRadius: "10px",
-              width: "300px",
-            }}
-          >
-            <SearchIcon sx={{ color: "#0096d6" }} />
-            <InputBase
-              placeholder="Search..."
-              sx={{
-                ml: 1,
-                flex: 1,
-                borderRadius: 2,
-              }}
-              value={searchQuery}
-              onChange={(e) => handleSearch(e.target.value)}
-            />
+          <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+            {isMobile && (
+              <IconButton
+                edge="start"
+                color="inherit"
+                onClick={() => setMobileDrawerOpen(true)}
+              >
+                <MenuIcon />
+              </IconButton>
+            )}
+            <Box
+              sx={{ display: "flex", alignItems: "center", cursor: "pointer" }}
+              onClick={() => handleNavigation("/dashboard")}
+            >
+              <ShieldOutlinedIcon
+                sx={{ mr: 1, color: "#6366f1", fontSize: 32 }}
+              />
+              <Typography variant="h6" fontWeight="bold">
+                Audit<span style={{ color: "#6366f1" }}>Wise</span>
+              </Typography>
+            </Box>
           </Box>
 
+          {!isMobile && (
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              {menuItems.map((item) => (
+                <Button
+                  key={item.text}
+                  onClick={() => handleNavigation(item.path)}
+                  sx={{
+                    color: isActive(item.path) ? "#6366f1" : "inherit",
+                    fontWeight: isActive(item.path) ? 600 : 400,
+                    textTransform: "none",
+                    "&:hover": {
+                      backgroundColor: darkMode ? "#1e293b" : "#f1f5f9",
+                    },
+                  }}
+                  startIcon={item.icon}
+                >
+                  {item.text}
+                </Button>
+              ))}
+            </Box>
+          )}
+
           <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+            {!isMobile && (
+              <Box
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  backgroundColor: darkMode ? "#1e293b" : "#f1f5f9",
+                  padding: "5px 10px",
+                  borderRadius: "10px",
+                  width: "250px",
+                }}
+              >
+                <SearchIcon sx={{ color: "#94a3b8" }} />
+                <InputBase
+                  placeholder="Search..."
+                  sx={{ ml: 1, flex: 1 }}
+                  value={searchQuery}
+                  onChange={(e) => handleSearch(e.target.value)}
+                />
+              </Box>
+            )}
+
             <IconButton onClick={toggleTheme}>
               {darkMode ? (
                 <LightModeIcon sx={{ color: "white" }} />
               ) : (
-                <DarkModeIcon sx={{ color: "gray" }} />
+                <DarkModeIcon sx={{ color: "#64748b" }} />
               )}
             </IconButton>
 
@@ -142,8 +320,16 @@ const Navbar = () => {
               }}
             >
               <Avatar sx={{ width: 32, height: 32, bgcolor: "#6366f1" }}>
-                {user?.name?.charAt(0).toUpperCase() || "A"}
+                {user?.name?.charAt(0).toUpperCase() || "U"}
               </Avatar>
+              {!isMobile && (
+                <Typography
+                  variant="body2"
+                  sx={{ display: { xs: "none", sm: "block" } }}
+                >
+                  {user?.name?.split(" ")[0] || "Account"}
+                </Typography>
+              )}
             </Box>
 
             <Menu
@@ -170,7 +356,7 @@ const Navbar = () => {
                     bgcolor: "#6366f1",
                   }}
                 >
-                  {user?.name?.charAt(0).toUpperCase() || "A"}
+                  {user?.name?.charAt(0).toUpperCase() || "U"}
                 </Avatar>
                 <Typography fontWeight="bold">
                   {user?.name || "User Name"}
@@ -178,14 +364,11 @@ const Navbar = () => {
                 <Typography variant="body2" color="gray">
                   {user?.email || "user@gmail.com"}
                 </Typography>
-                <Typography
-                  variant="caption"
-                  color="#6366f1"
-                  fontWeight="bold"
-                  textTransform="capitalize"
-                >
-                  {user?.plan || "Free"} Plan
-                </Typography>
+                <Chip
+                  label={`${user?.plan || "Free"} Plan`}
+                  size="small"
+                  sx={{ mt: 1, bgcolor: "#6366f1", color: "white" }}
+                />
               </Box>
 
               <Divider />
@@ -193,6 +376,11 @@ const Navbar = () => {
               <MenuItem onClick={handleSetting}>
                 <SettingsApplicationsIcon sx={{ mr: 1 }} />
                 Account Settings
+              </MenuItem>
+
+              <MenuItem onClick={() => handleNavigation("/price")}>
+                <AddCardIcon sx={{ mr: 1 }} />
+                Upgrade Plan
               </MenuItem>
 
               <Divider />
@@ -206,6 +394,21 @@ const Navbar = () => {
         </Toolbar>
       </AppBar>
 
+      <Drawer
+        anchor="left"
+        open={mobileDrawerOpen}
+        onClose={() => setMobileDrawerOpen(false)}
+        PaperProps={{
+          sx: {
+            width: 280,
+            background: darkMode ? "#0f172a" : "#ffffff",
+          },
+        }}
+      >
+        {drawerContent}
+      </Drawer>
+
+      {/* Logout Dialog */}
       <Dialog
         open={logoutDialogOpen}
         onClose={handleLogoutCancel}

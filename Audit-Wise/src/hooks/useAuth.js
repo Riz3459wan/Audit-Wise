@@ -32,6 +32,11 @@ export const useAuth = () => {
 
         await dbHelpers.logAudit(foundUser.id, "LOGIN", { method: "password" });
 
+        const pendingTrialData = sessionStorage.getItem("pendingTrialData");
+        if (pendingTrialData) {
+          return { success: true, hasPendingTrialData: true };
+        }
+
         return { success: true };
       }
       return { success: false, error: "Invalid credentials" };
