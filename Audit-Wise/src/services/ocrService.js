@@ -4,7 +4,7 @@ import mammoth from "mammoth";
 const pdfjsVersion = "4.10.38";
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsVersion}/build/pdf.worker.min.mjs`;
 
-const HF_TOKEN = "YOUR_HUGGING_FACE_TOKEN_HERE";
+const HF_TOKEN = "";
 
 export const ocrService = {
   async extractTextFromPDF(file, onProgress) {
