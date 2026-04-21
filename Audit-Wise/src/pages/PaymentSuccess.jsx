@@ -1,123 +1,38 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
-import {
-  Box,
-  Typography,
-  Button,
-  Paper,
-  Alert,
-  CircularProgress,
-} from "@mui/material";
+import { Box, Typography, Button, Paper } from "@mui/material";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import { usePreventBack } from "../hooks/usePreventBack";
 
 const PaymentSuccess = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { updateUserPlan, refreshUser } = useAuth();
-  const [isUpdating, setIsUpdating] = useState(true);
-  const [error, setError] = useState(null);
+  const { updateUserPlan } = useAuth();
   usePreventBack();
 
   const purchasedPlan = location.state?.plan;
 
   useEffect(() => {
     const updatePlan = async () => {
-      if (!purchasedPlan) {
-        navigate("/price", { replace: true });
-        return;
-      }
-
-      try {
-        const result = await updateUserPlan(purchasedPlan.planType);
-        if (result.success) {
-          await refreshUser();
-          setIsUpdating(false);
-        } else {
-          setError(
-            result.error || "Failed to update plan. Please contact support.",
-          );
-          setIsUpdating(false);
-        }
-      } catch (err) {
-        setError("An unexpected error occurred. Please contact support.");
-        setIsUpdating(false);
+      if (purchasedPlan) {
+        await updateUserPlan(purchasedPlan.planType);
+        setTimeout(() => {
+          window.location.reload();
+        }, 5000);
       }
     };
 
     updatePlan();
-  }, [purchasedPlan, updateUserPlan, refreshUser, navigate]);
+  }, [purchasedPlan, updateUserPlan]);
 
   const handleGoToDashboard = () => {
     navigate("/dashboard", { replace: true });
   };
 
   if (!purchasedPlan) {
+    navigate("/price", { replace: true });
     return null;
-  }
-
-  if (isUpdating) {
-    return (
-      <Box
-        sx={{
-          height: "100vh",
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          background: "linear-gradient(135deg, #6366f1, #38bdf8)",
-        }}
-      >
-        <Paper
-          elevation={6}
-          sx={{ padding: 6, borderRadius: "15px", textAlign: "center" }}
-        >
-          <CircularProgress size={60} sx={{ mb: 3 }} />
-          <Typography variant="h5">Activating your plan...</Typography>
-          <Typography variant="body2" color="textSecondary">
-            Please wait while we update your account.
-          </Typography>
-        </Paper>
-      </Box>
-    );
-  }
-
-  if (error) {
-    return (
-      <Box
-        sx={{
-          height: "100vh",
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          background: "linear-gradient(135deg, #6366f1, #38bdf8)",
-        }}
-      >
-        <Paper
-          elevation={6}
-          sx={{
-            padding: 6,
-            width: 450,
-            borderRadius: "15px",
-            textAlign: "center",
-          }}
-        >
-          <Typography variant="h4" color="error" mb={2}>
-            Something went wrong
-          </Typography>
-          <Alert severity="error" sx={{ mb: 3 }}>
-            {error}
-          </Alert>
-          <Button
-            fullWidth
-            variant="contained"
-            onClick={() => navigate("/price", { replace: true })}
-          >
-            Return to Pricing
-          </Button>
-        </Paper>
-      </Box>
-    );
   }
 
   return (

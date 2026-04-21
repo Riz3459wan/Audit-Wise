@@ -8,12 +8,6 @@ export const PLAN_LIMITS = {
   business: 200,
 };
 
-export const PLAN_PRICES = {
-  free: 0,
-  pro: 499,
-  business: 999,
-};
-
 db.version(1).stores({
   users:
     "++id, email, password, name, avatar, plan, planUpdatedAt, planExpiryDate, monthlyUploadCount, monthlyResetDate, createdAt, lastLogin, isActive, extraUploads",
@@ -54,7 +48,7 @@ db.version(2)
   .upgrade(async (trans) => {
     const users = await trans.table("users").toArray();
     for (const user of users) {
-      if (user.extraUploads === undefined || user.extraUploads === null) {
+      if (!user.extraUploads) {
         await trans.table("users").update(user.id, { extraUploads: 0 });
       }
       if (!user.planExpiryDate && user.plan !== "free") {
@@ -63,13 +57,6 @@ db.version(2)
         await trans
           .table("users")
           .update(user.id, { planExpiryDate: expiryDate.toISOString() });
-      }
-      if (!user.monthlyResetDate) {
-        const firstDayOfMonth = new Date();
-        firstDayOfMonth.setDate(1);
-        await trans
-          .table("users")
-          .update(user.id, { monthlyResetDate: firstDayOfMonth.toISOString() });
       }
     }
   });
@@ -93,7 +80,7 @@ export const dbHelpers = {
   },
 
   async getUserByEmail(email) {
-    return await db.users.where("email").equals(email.toLowerCase()).first();
+    return await db.users.where("email").equals(email).first();
   },
 
   async checkAndResetMonthlyCount(userId) {
@@ -152,7 +139,6 @@ export const dbHelpers = {
       plan: userPlan,
       baseLimit: baseLimit,
       extraUploads: extraUploads,
-      planExpiryDate: user?.planExpiryDate,
     };
   },
 
@@ -284,14 +270,11 @@ export const dbHelpers = {
 
     await db.users.update(userId, { extraUploads: newExtra });
 
-    const expiryDate = new Date();
-    expiryDate.setMonth(expiryDate.getMonth() + 1);
-
     await db.addOns.add({
       userId,
       extraUploads: extraCount,
       purchaseDate: new Date().toISOString(),
-      expiryDate: expiryDate.toISOString(),
+      expiryDate: null,
       isActive: true,
       price: price,
     });
@@ -303,45 +286,6 @@ export const dbHelpers = {
     });
 
     return newExtra;
-  },
-
-  async getExpiringPlans(daysThreshold = 7) {
-    const threshold = new Date();
-    threshold.setDate(threshold.getDate() + daysThreshold);
-
-    const users = await db.users
-      .where("planExpiryDate")
-      .above(new Date().toISOString())
-      .and(
-        (user) =>
-          user.planExpiryDate && new Date(user.planExpiryDate) <= threshold,
-      )
-      .toArray();
-
-    return users;
-  },
-
-  async getUserDocuments(userId, limit = 50) {
-    return await db.documents
-      .where("userId")
-      .equals(userId)
-      .reverse()
-      .limit(limit)
-      .toArray();
-  },
-
-  async deleteDocument(documentId, userId) {
-    const doc = await db.documents.get(documentId);
-    if (!doc || doc.userId !== userId) {
-      throw new Error("Document not found or unauthorized");
-    }
-
-    await db.analyseResult.where("documentId").equals(documentId).delete();
-    await db.reports.where("documentId").equals(documentId).delete();
-    await db.documents.delete(documentId);
-
-    await this.logAudit(userId, "DOCUMENT_DELETED", { documentId });
-    return true;
   },
 };
 
