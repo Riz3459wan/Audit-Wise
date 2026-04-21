@@ -6,7 +6,6 @@ import {
   useTheme,
   Alert,
   CircularProgress,
-  useMediaQuery,
 } from "@mui/material";
 import PricingCard from "../components/PricingCard";
 import { db, PLAN_LIMITS } from "../database/db";
@@ -15,8 +14,6 @@ import { useAuth } from "../hooks/useAuth";
 const Pricing = () => {
   const theme = useTheme();
   const isDarkMode = theme.palette.mode === "dark";
-  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
-  const isTablet = useMediaQuery(theme.breakpoints.between("sm", "md"));
   const { user } = useAuth();
 
   const [selectedPlanForPayment, setSelectedPlanForPayment] = useState(null);
@@ -126,13 +123,12 @@ const Pricing = () => {
     <Container
       maxWidth="xl"
       sx={{
-        py: { xs: 2, sm: 3, md: 4 },
-        px: { xs: 2, sm: 3, md: 4 },
+        py: 4,
         backgroundColor: isDarkMode ? "#121212" : "#f5f5f5",
         minHeight: "100vh",
       }}
     >
-      <Box sx={{ textAlign: "center", mb: { xs: 2, sm: 3, md: 4 } }}>
+      <Box sx={{ textAlign: "center", mb: 4 }}>
         {error && (
           <Alert severity="error" sx={{ mb: 2, maxWidth: 600, mx: "auto" }}>
             {error}
@@ -153,10 +149,7 @@ const Pricing = () => {
           </Alert>
         )}
 
-        <Typography
-          variant={isMobile ? "h5" : "h4"}
-          sx={{ fontWeight: 800, mb: 2 }}
-        >
+        <Typography variant="h4" sx={{ fontWeight: 800, mb: 2 }}>
           You have {remainingAttempts} uploads left on your {currentPlan} plan
         </Typography>
 
@@ -171,19 +164,10 @@ const Pricing = () => {
           gap: 3,
           justifyContent: "center",
           flexWrap: "wrap",
-          flexDirection: isMobile ? "column" : "row",
-          alignItems: isMobile ? "center" : "stretch",
         }}
       >
         {pricingPlans.map((plan, idx) => (
-          <Box
-            key={idx}
-            sx={{
-              flex: isMobile ? "1 1 auto" : "1 1 280px",
-              maxWidth: isMobile ? "100%" : 350,
-              width: isMobile ? "100%" : "auto",
-            }}
-          >
+          <Box key={idx} sx={{ flex: "1 1 280px", maxWidth: 350 }}>
             <PricingCard
               plan={plan}
               currentPlan={currentPlan}

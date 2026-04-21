@@ -7,59 +7,30 @@ import {
   Paper,
   CircularProgress,
   Alert,
-  IconButton,
   InputAdornment,
-  LinearProgress,
+  IconButton,
 } from "@mui/material";
-import { Visibility, VisibilityOff } from "@mui/icons-material";
 import { useNavigate, Link } from "react-router-dom";
 import { db } from "../database/db";
-
-const simpleHash = async (password) => {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password);
-  const hash = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(hash))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-};
+import PersonIcon from "@mui/icons-material/Person";
+import EmailIcon from "@mui/icons-material/Email";
+import LockIcon from "@mui/icons-material/Lock";
+import VisibilityIcon from "@mui/icons-material/Visibility";
+import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
 
 const Register = () => {
   const navigate = useNavigate();
-
   const [form, setForm] = useState({
     name: "",
     email: "",
     password: "",
     confirmPassword: "",
   });
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-
-  const getPasswordStrength = (password) => {
-    let strength = 0;
-    if (password.length >= 8) strength++;
-    if (password.match(/[a-z]/) && password.match(/[A-Z]/)) strength++;
-    if (password.match(/\d/)) strength++;
-    if (password.match(/[^a-zA-Z\d]/)) strength++;
-    return strength;
-  };
-
-  const passwordStrength = getPasswordStrength(form.password);
-  const strengthColor =
-    passwordStrength === 0
-      ? "error"
-      : passwordStrength <= 2
-        ? "warning"
-        : "success";
-  const strengthText =
-    passwordStrength === 0
-      ? "Very Weak"
-      : passwordStrength <= 2
-        ? "Weak"
-        : "Strong";
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [openSuccess, setOpenSuccess] = useState(false);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -67,21 +38,15 @@ const Register = () => {
   };
 
   const validateForm = () => {
-    const emailRegex = /^[^\s@]+@([^\s@]+\.)+[^\s@]+$/;
-
     if (!form.name.trim()) {
       setError("Name is required");
-      return false;
-    }
-    if (form.name.trim().length < 2) {
-      setError("Name must be at least 2 characters");
       return false;
     }
     if (!form.email.trim()) {
       setError("Email is required");
       return false;
     }
-    if (!emailRegex.test(form.email)) {
+    if (!form.email.includes("@") || !form.email.includes(".")) {
       setError("Enter a valid email address");
       return false;
     }
@@ -91,12 +56,6 @@ const Register = () => {
     }
     if (form.password.length < 6) {
       setError("Password must be at least 6 characters");
-      return false;
-    }
-    if (getPasswordStrength(form.password) < 2) {
-      setError(
-        "Password is too weak. Use a mix of letters, numbers, and symbols",
-      );
       return false;
     }
     if (form.password !== form.confirmPassword) {
@@ -115,7 +74,7 @@ const Register = () => {
     try {
       const existingUser = await db.users
         .where("email")
-        .equals(form.email.toLowerCase())
+        .equals(form.email)
         .first();
 
       if (existingUser) {
@@ -124,23 +83,19 @@ const Register = () => {
         return;
       }
 
-      const hashedPassword = await simpleHash(form.password);
-
       await db.users.add({
         name: form.name.trim(),
         email: form.email.toLowerCase(),
-        password: hashedPassword,
+        password: form.password,
         plan: "free",
         createdAt: new Date().toISOString(),
         isActive: true,
         monthlyUploadCount: 0,
         monthlyResetDate: new Date().toISOString(),
-        extraUploads: 0,
       });
 
-      navigate("/");
+      setOpenSuccess(true);
     } catch (err) {
-      console.error("Registration error:", err);
       setError("Registration failed. Please try again.");
     } finally {
       setIsLoading(false);
@@ -148,32 +103,40 @@ const Register = () => {
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === "Enter" && !isLoading) {
+    if (e.key === "Enter") {
       handleRegister();
     }
-  };
-
-  const toggleShowPassword = () => {
-    setShowPassword((prev) => !prev);
-  };
-
-  const toggleShowConfirmPassword = () => {
-    setShowConfirmPassword((prev) => !prev);
   };
 
   return (
     <Box
       sx={{
         height: "100vh",
+        width: "100vw",
         display: "flex",
         justifyContent: "center",
         alignItems: "center",
-        background: "linear-gradient(135deg, #38bdf8, #6366f1)",
+        background: "linear-gradient(135deg, #6366f1, #38bdf8)",
+        margin: 0,
+        padding: 0,
+        position: "fixed",
+        top: 0,
+        left: 0,
       }}
     >
-      <Paper sx={{ p: 4, width: 400, borderRadius: "15px" }}>
-        <Typography variant="h5" fontWeight="bold" mb={2}>
-          Register
+      <Paper
+        elevation={3}
+        sx={{
+          padding: 4,
+          width: 400,
+          borderRadius: "15px",
+          border: "none",
+          outline: "none",
+          boxShadow: "0 8px 32px rgba(0,0,0,0.1)",
+        }}
+      >
+        <Typography variant="h5" fontWeight="bold" mb={2} align="center">
+          Create Account
         </Typography>
 
         {error && (
@@ -191,7 +154,14 @@ const Register = () => {
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           disabled={isLoading}
-          autoComplete="name"
+          error={!!error && !form.name}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <PersonIcon sx={{ color: "#6366f1" }} />
+              </InputAdornment>
+            ),
+          }}
         />
 
         <TextField
@@ -204,7 +174,14 @@ const Register = () => {
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           disabled={isLoading}
-          autoComplete="email"
+          error={!!error && !form.email}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <EmailIcon sx={{ color: "#6366f1" }} />
+              </InputAdornment>
+            ),
+          }}
         />
 
         <TextField
@@ -217,31 +194,26 @@ const Register = () => {
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           disabled={isLoading}
-          autoComplete="new-password"
+          error={!!error && !form.password}
+          helperText="Minimum 6 characters"
           InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <LockIcon sx={{ color: "#6366f1" }} />
+              </InputAdornment>
+            ),
             endAdornment: (
               <InputAdornment position="end">
-                <IconButton onClick={toggleShowPassword} edge="end">
-                  {showPassword ? <VisibilityOff /> : <Visibility />}
+                <IconButton
+                  onClick={() => setShowPassword(!showPassword)}
+                  edge="end"
+                >
+                  {showPassword ? <VisibilityOffIcon /> : <VisibilityIcon />}
                 </IconButton>
               </InputAdornment>
             ),
           }}
         />
-
-        {form.password && (
-          <Box sx={{ mt: 1, mb: 1 }}>
-            <LinearProgress
-              variant="determinate"
-              value={(passwordStrength / 4) * 100}
-              color={strengthColor}
-              sx={{ height: 6, borderRadius: 3 }}
-            />
-            <Typography variant="caption" color={`${strengthColor}.main`}>
-              Password strength: {strengthText}
-            </Typography>
-          </Box>
-        )}
 
         <TextField
           fullWidth
@@ -253,12 +225,29 @@ const Register = () => {
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           disabled={isLoading}
-          autoComplete="new-password"
+          error={!!error && form.confirmPassword !== form.password}
+          helperText={
+            form.password !== form.confirmPassword && form.confirmPassword
+              ? "Passwords do not match"
+              : ""
+          }
           InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <LockIcon sx={{ color: "#6366f1" }} />
+              </InputAdornment>
+            ),
             endAdornment: (
               <InputAdornment position="end">
-                <IconButton onClick={toggleShowConfirmPassword} edge="end">
-                  {showConfirmPassword ? <VisibilityOff /> : <Visibility />}
+                <IconButton
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  edge="end"
+                >
+                  {showConfirmPassword ? (
+                    <VisibilityOffIcon />
+                  ) : (
+                    <VisibilityIcon />
+                  )}
                 </IconButton>
               </InputAdornment>
             ),
@@ -270,9 +259,9 @@ const Register = () => {
           variant="contained"
           disabled={isLoading}
           sx={{
-            mt: 2,
+            mt: 3,
             py: 1.5,
-            background: "linear-gradient(90deg, #38bdf8, #6366f1)",
+            background: "linear-gradient(90deg, #6366f1, #38bdf8)",
           }}
           onClick={handleRegister}
         >
@@ -288,7 +277,7 @@ const Register = () => {
           <Link
             to="/"
             style={{
-              color: "#6366f1",
+              color: "#38bdf8",
               fontWeight: "bold",
               textDecoration: "none",
             }}
@@ -297,6 +286,55 @@ const Register = () => {
           </Link>
         </Typography>
       </Paper>
+
+      {openSuccess && (
+        <Box
+          sx={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: "rgba(0,0,0,0.5)",
+            zIndex: 9999,
+          }}
+          onClick={() => navigate("/")}
+        >
+          <Paper
+            elevation={3}
+            sx={{
+              p: 4,
+              maxWidth: 400,
+              textAlign: "center",
+              borderRadius: "15px",
+              border: "none",
+              outline: "none",
+            }}
+          >
+            <Typography variant="h5" fontWeight="bold" gutterBottom>
+              Registration Successful!
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+              Your account has been created. Click anywhere to continue to
+              login.
+            </Typography>
+            <Button
+              fullWidth
+              variant="contained"
+              onClick={() => navigate("/login")}
+              sx={{
+                py: 1.5,
+                background: "linear-gradient(90deg, #6366f1, #38bdf8)",
+              }}
+            >
+              Go to Login
+            </Button>
+          </Paper>
+        </Box>
+      )}
     </Box>
   );
 };

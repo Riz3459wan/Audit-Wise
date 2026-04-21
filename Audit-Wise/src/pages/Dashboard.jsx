@@ -52,49 +52,10 @@ import {
   ComposedChart,
 } from "recharts";
 import { useNavigate } from "react-router-dom";
-import { db, dbHelpers } from "../database/db";
+import { db } from "../database/db";
 import { useAuth } from "../hooks/useAuth";
 
-const MOCK_FINANCIAL_DATA = {
-  totalRevenue: 125000,
-  totalExpenses: 78000,
-  netProfit: 47000,
-  profitMargin: 37.6,
-  riskScore: 28,
-  severity: "Low",
-  anomaliesCount: 1,
-  currency: "INR",
-  revenueData: [
-    { month: "Jan", revenue: 45000, expenses: 28000, profit: 17000 },
-    { month: "Feb", revenue: 52000, expenses: 31000, profit: 21000 },
-    { month: "Mar", revenue: 48000, expenses: 29000, profit: 19000 },
-  ],
-  categoryData: [
-    { name: "Operations", value: 35000 },
-    { name: "Salaries", value: 25000 },
-    { name: "Marketing", value: 12000 },
-    { name: "Utilities", value: 6000 },
-  ],
-  anomalies: [
-    {
-      type: "expense_spike",
-      description: "Unusual expense increase detected in Marketing category",
-      severity: "medium",
-    },
-  ],
-  keyFindings: [
-    "Revenue growth trend is positive",
-    "Expense control needs attention",
-    "Cash flow appears healthy",
-  ],
-  recommendations: [
-    "Consider renegotiating vendor contracts",
-    "Implement stricter expense tracking",
-    "Explore revenue diversification",
-  ],
-};
-
-const Dashboard = () => {
+const FinancialDashboard = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const theme = useTheme();
@@ -118,32 +79,36 @@ const Dashboard = () => {
     setError("");
 
     try {
-      const docs = await dbHelpers.getUserDocuments(user.id, 10);
+      const docs = await db.documents
+        .where("userId")
+        .equals(user.id)
+        .reverse()
+        .limit(10)
+        .toArray();
 
       if (docs.length > 0) {
         setRecentDocuments(docs);
-
         const latestDoc = docs[0];
-        const analysis = await dbHelpers.getAnalyseResultByDocumentId(
-          latestDoc.id
-        );
+        const analysis = await db.analyseResult
+          .where("documentId")
+          .equals(latestDoc.id)
+          .first();
 
         if (analysis) {
           setSelectedDocument(latestDoc);
           setSelectedAnalysis(analysis);
-
           const metrics = calculateFinancialMetrics(latestDoc, analysis);
           setFinancialMetrics(metrics);
         } else {
-          setFinancialMetrics(MOCK_FINANCIAL_DATA);
+          setFinancialMetrics(null);
         }
       } else {
-        setFinancialMetrics(MOCK_FINANCIAL_DATA);
+        setFinancialMetrics(null);
       }
     } catch (err) {
       console.error("Failed to load dashboard data:", err);
-      setError("Failed to load dashboard data. Using sample data.");
-      setFinancialMetrics(MOCK_FINANCIAL_DATA);
+      setError("Failed to load dashboard data");
+      setFinancialMetrics(null);
     } finally {
       setLoading(false);
     }
@@ -151,8 +116,31 @@ const Dashboard = () => {
 
   const calculateFinancialMetrics = (document, analysis) => {
     const extractedText = analysis.extractedText || "";
-    const keyFindings = tryParseJSON(analysis.keyFindings) || [];
-    const recommendations = tryParseJSON(analysis.recommendations) || [];
+
+    let keyFindings = [];
+    let recommendations = [];
+
+    try {
+      if (analysis.keyFindings) {
+        keyFindings =
+          typeof analysis.keyFindings === "string"
+            ? JSON.parse(analysis.keyFindings)
+            : analysis.keyFindings;
+      }
+    } catch {
+      keyFindings = [];
+    }
+
+    try {
+      if (analysis.recommendations) {
+        recommendations =
+          typeof analysis.recommendations === "string"
+            ? JSON.parse(analysis.recommendations)
+            : analysis.recommendations;
+      }
+    } catch {
+      recommendations = [];
+    }
 
     const numbers = extractNumbers(extractedText);
 
@@ -187,25 +175,17 @@ const Dashboard = () => {
       categoryData,
       anomalies: parseAnomalies(keyFindings),
       keyFindings: keyFindings.map((f) =>
-        typeof f === "string" ? f : f.finding || ""
+        typeof f === "string" ? f : f.finding || "",
       ),
       recommendations: recommendations.map((r) =>
-        typeof r === "string" ? r : r.recommendation || ""
+        typeof r === "string" ? r : r.recommendation || "",
       ),
+      sentiment: analysis.sentiment || "Neutral",
       confidence: analysis.confidence || 0.8,
       wordCount: analysis.wordCount || 0,
+      summary: analysis.summary || "",
       documentType: detectDocumentType(extractedText),
     };
-  };
-
-  const tryParseJSON = (str) => {
-    if (!str) return [];
-    if (Array.isArray(str)) return str;
-    try {
-      return JSON.parse(str);
-    } catch {
-      return [];
-    }
   };
 
   const extractNumbers = (text) => {
@@ -283,9 +263,9 @@ const Dashboard = () => {
   };
 
   const generateTrendData = (revenue, expenses) => {
-    const months = ["Month 1", "Month 2", "Month 3"];
+    const months = ["Jan", "Feb", "Mar"];
     return months.map((month, idx) => {
-      const variance = 0.85 + Math.random() * 0.3;
+      const variance = 0.85 + idx * 0.075;
       const r = Math.round(revenue * variance);
       const e = Math.round(expenses * variance);
       return {
@@ -357,7 +337,6 @@ const Dashboard = () => {
       case "high":
         return "#ef4444";
       case "medium":
-      case "moderate":
         return "#f59e0b";
       case "low":
         return "#10b981";
@@ -368,7 +347,11 @@ const Dashboard = () => {
 
   const handleDocumentSelect = async (doc) => {
     try {
-      const analysis = await dbHelpers.getAnalyseResultByDocumentId(doc.id);
+      const analysis = await db.analyseResult
+        .where("documentId")
+        .equals(doc.id)
+        .first();
+
       if (analysis) {
         setSelectedDocument(doc);
         setSelectedAnalysis(analysis);
@@ -388,36 +371,37 @@ const Dashboard = () => {
         value: formatCurrency(metrics.totalRevenue, metrics.currency),
         icon: <AttachMoneyIcon />,
         bgColor: "#10b981",
-        textColor: "#ffffff",
       },
       {
         title: "Net Profit",
         value: formatCurrency(metrics.netProfit, metrics.currency),
-        icon: metrics.netProfit >= 0 ? <TrendingUpIcon /> : <TrendingDownIcon />,
+        icon:
+          metrics.netProfit >= 0 ? <TrendingUpIcon /> : <TrendingDownIcon />,
         bgColor: metrics.netProfit >= 0 ? "#10b981" : "#ef4444",
-        textColor: "#ffffff",
       },
       {
         title: "Profit Margin",
         value: `${metrics.profitMargin.toFixed(1)}%`,
         icon: <AssessmentIcon />,
         bgColor: "#6366f1",
-        textColor: "#ffffff",
       },
       {
         title: "Risk Score",
         value: metrics.riskScore,
         icon: <WarningIcon />,
         bgColor: getRiskColor(metrics.riskScore),
-        textColor: "#ffffff",
       },
-
+      {
+        title: "Sentiment",
+        value: metrics.sentiment || "Neutral",
+        icon: <TimelineIcon />,
+        bgColor: getSeverityColor(metrics.severity),
+      },
       {
         title: "Anomalies",
         value: metrics.anomaliesCount,
         icon: <WarningIcon />,
         bgColor: "#f59e0b",
-        textColor: "#ffffff",
       },
     ];
 
@@ -438,7 +422,11 @@ const Dashboard = () => {
               }}
             >
               <CardContent>
-                <Box display="flex" justifyContent="space-between" alignItems="center">
+                <Box
+                  display="flex"
+                  justifyContent="space-between"
+                  alignItems="center"
+                >
                   <Box>
                     <Typography
                       variant="body2"
@@ -449,7 +437,7 @@ const Dashboard = () => {
                     <Typography
                       variant="h5"
                       fontWeight="bold"
-                      sx={{ color: metric.textColor }}
+                      sx={{ color: "#ffffff" }}
                     >
                       {metric.value}
                     </Typography>
@@ -474,7 +462,11 @@ const Dashboard = () => {
   };
 
   const RevenueChart = ({ data, currency }) => {
-    if (!data || data.length === 0) {
+    if (
+      !data ||
+      data.length === 0 ||
+      (data[0].revenue === 0 && data[0].expenses === 0)
+    ) {
       return (
         <Card sx={{ borderRadius: 3, boxShadow: 2 }}>
           <CardContent>
@@ -482,8 +474,12 @@ const Dashboard = () => {
               Revenue & Profit Analysis
             </Typography>
             <Box sx={{ textAlign: "center", py: 4 }}>
-              <BarChartIcon sx={{ fontSize: 60, color: "text.secondary", mb: 2 }} />
-              <Typography color="textSecondary">No revenue data available</Typography>
+              <BarChartIcon
+                sx={{ fontSize: 60, color: "text.secondary", mb: 2 }}
+              />
+              <Typography color="textSecondary">
+                No revenue data available
+              </Typography>
             </Box>
           </CardContent>
         </Card>
@@ -511,7 +507,11 @@ const Dashboard = () => {
               <RechartsTooltip
                 formatter={(value, name) => [
                   formatCurrency(value, currency),
-                  name === "profit" ? "Profit" : name === "revenue" ? "Revenue" : "Expenses",
+                  name === "profit"
+                    ? "Profit"
+                    : name === "revenue"
+                      ? "Revenue"
+                      : "Expenses",
                 ]}
               />
               <Legend />
@@ -548,7 +548,7 @@ const Dashboard = () => {
   };
 
   const ExpenseDistribution = ({ data, currency }) => {
-    if (!data || data.length === 0) {
+    if (!data || data.length === 0 || data.every((d) => d.value === 0)) {
       return (
         <Card sx={{ borderRadius: 3, boxShadow: 2 }}>
           <CardContent>
@@ -556,15 +556,26 @@ const Dashboard = () => {
               Expense Distribution
             </Typography>
             <Box sx={{ textAlign: "center", py: 4 }}>
-              <PieChartIcon sx={{ fontSize: 60, color: "text.secondary", mb: 2 }} />
-              <Typography color="textSecondary">No expense data available</Typography>
+              <PieChartIcon
+                sx={{ fontSize: 60, color: "text.secondary", mb: 2 }}
+              />
+              <Typography color="textSecondary">
+                No expense data available
+              </Typography>
             </Box>
           </CardContent>
         </Card>
       );
     }
 
-    const COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"];
+    const COLORS = [
+      "#6366f1",
+      "#10b981",
+      "#f59e0b",
+      "#ef4444",
+      "#8b5cf6",
+      "#ec4899",
+    ];
 
     return (
       <Card sx={{ borderRadius: 3, boxShadow: 2 }}>
@@ -578,15 +589,22 @@ const Dashboard = () => {
                 data={data}
                 cx="50%"
                 cy="50%"
-                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                label={({ name, percent }) =>
+                  `${name} ${(percent * 100).toFixed(0)}%`
+                }
                 outerRadius={100}
                 dataKey="value"
               >
                 {data.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  <Cell
+                    key={`cell-${index}`}
+                    fill={COLORS[index % COLORS.length]}
+                  />
                 ))}
               </Pie>
-              <RechartsTooltip formatter={(value) => formatCurrency(value, currency)} />
+              <RechartsTooltip
+                formatter={(value) => formatCurrency(value, currency)}
+              />
               <Legend />
             </PieChart>
           </ResponsiveContainer>
@@ -649,9 +667,7 @@ const Dashboard = () => {
               height: 8,
               borderRadius: 4,
               mb: 2,
-              "& .MuiLinearProgress-bar": {
-                bgcolor: getRiskColor(riskScore),
-              },
+              "& .MuiLinearProgress-bar": { bgcolor: getRiskColor(riskScore) },
             }}
           />
 
@@ -695,7 +711,9 @@ const Dashboard = () => {
                   {metrics.keyFindings.map((finding, idx) => (
                     <ListItem key={idx} disablePadding>
                       <ListItemAvatar>
-                        <Avatar sx={{ bgcolor: "#10b981", width: 32, height: 32 }}>
+                        <Avatar
+                          sx={{ bgcolor: "#10b981", width: 32, height: 32 }}
+                        >
                           {idx + 1}
                         </Avatar>
                       </ListItemAvatar>
@@ -727,7 +745,9 @@ const Dashboard = () => {
                   {metrics.recommendations.map((rec, idx) => (
                     <ListItem key={idx} disablePadding>
                       <ListItemAvatar>
-                        <Avatar sx={{ bgcolor: "#6366f1", width: 32, height: 32 }}>
+                        <Avatar
+                          sx={{ bgcolor: "#6366f1", width: 32, height: 32 }}
+                        >
                           {idx + 1}
                         </Avatar>
                       </ListItemAvatar>
@@ -770,10 +790,12 @@ const Dashboard = () => {
     );
   }
 
-  if (!financialMetrics) {
+  if (!financialMetrics || recentDocuments.length === 0) {
     return (
       <Box sx={{ textAlign: "center", py: 8 }}>
-        <CloudUploadIcon sx={{ fontSize: 80, color: "text.secondary", mb: 2 }} />
+        <CloudUploadIcon
+          sx={{ fontSize: 80, color: "text.secondary", mb: 2 }}
+        />
         <Typography variant="h5" gutterBottom>
           No Financial Data Available
         </Typography>
@@ -785,6 +807,7 @@ const Dashboard = () => {
           size="large"
           onClick={() => navigate("/upload")}
           startIcon={<CloudUploadIcon />}
+          sx={{ background: "linear-gradient(90deg, #6366f1, #38bdf8)" }}
         >
           Upload Documents
         </Button>
@@ -861,8 +884,10 @@ const Dashboard = () => {
                       {selectedDocument.fileName}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                      {financialMetrics.documentType?.replace(/_/g, " ").toUpperCase()} •
-                      Analyzed on {formatDate(selectedDocument.scannedAt)}
+                      {financialMetrics.documentType
+                        ?.replace(/_/g, " ")
+                        .toUpperCase()}{" "}
+                      • Analyzed on {formatDate(selectedDocument.scannedAt)}
                     </Typography>
                   </Box>
                   <Box>
@@ -889,11 +914,7 @@ const Dashboard = () => {
           {selectedAnalysis?.summary && (
             <Alert
               severity="info"
-              sx={{
-                mb: 3,
-                borderRadius: 3,
-                boxShadow: 1,
-              }}
+              sx={{ mb: 3, borderRadius: 3, boxShadow: 1 }}
             >
               <AlertTitle>Analysis Summary</AlertTitle>
               {selectedAnalysis.summary}
@@ -925,14 +946,17 @@ const Dashboard = () => {
         </Grid>
 
         <Grid item xs={12} md={3}>
-          <Card sx={{ borderRadius: 3, boxShadow: 2, position: "sticky", top: 20 }}>
+          <Card
+            sx={{ borderRadius: 3, boxShadow: 2, position: "sticky", top: 20 }}
+          >
             <Box
               sx={{
                 p: 2,
                 borderBottom: "1px solid",
                 borderColor: "divider",
-                bgcolor: "primary.main",
+                bgcolor: "#6366f1",
                 color: "white",
+                borderRadius: "12px 12px 0 0",
               }}
             >
               <Typography variant="h6">Recent Documents</Typography>
@@ -997,4 +1021,4 @@ const Dashboard = () => {
   );
 };
 
-export default Dashboard;
+export default FinancialDashboard;
