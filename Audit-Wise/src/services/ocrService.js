@@ -1,16 +1,17 @@
 import * as pdfjsLib from "pdfjs-dist";
 import mammoth from "mammoth";
-
+//This is used to get the worker file/pointing the location of the worker file
 const pdfjsVersion = "4.10.38";
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsVersion}/build/pdf.worker.min.mjs`;
-
+import Tesseract from 'tesseract.js';
+//Here we have to give the token of the user for using the api;
 const HF_TOKEN = "";
 
 export const ocrService = {
   async extractTextFromPDF(file, onProgress) {
     try {
       onProgress?.({ status: "loading_pdf", progress: 10 });
-
+      console.log(onProgress);
       const arrayBuffer = await file.arrayBuffer();
       const loadingTask = pdfjsLib.getDocument({
         data: arrayBuffer,
@@ -29,6 +30,7 @@ export const ocrService = {
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
         const pageText = textContent.items.map((item) => item.str).join(" ");
+
 
         if (pageText && pageText.trim().length > 0) {
           fullText += pageText + "\n";
@@ -69,22 +71,52 @@ export const ocrService = {
     }
   },
 
-  async extractTextFromImage(file, onProgress) {
-    try {
-      onProgress?.({ status: "processing_image", progress: 50 });
-      onProgress?.({ status: "complete", progress: 100 });
-
-      return {
-        success: true,
-        text: `Image: ${file.name}\nUploaded for audit.`,
-      };
-    } catch (error) {
-      return {
-        success: true,
-        text: `Image: ${file.name}`,
-      };
+ async extractTextFromImage(file, onProgress) {
+  try {
+    onProgress?.({ status: "loading_image", progress: 5 });
+    
+    if (!file.type.startsWith('image/')) {
+      throw new Error('Invalid file type. Expected an image.');
     }
-  },
+
+    onProgress?.({ status: "initializing_ocr", progress: 10 });
+
+    const worker = await Tesseract.createWorker('eng', 1, {
+      logger: (m) => {
+        if (m.status === 'recognizing text') {
+          const progress = 10 + Math.floor(m.progress * 85);
+          onProgress?.({ 
+            status: `extracting_text: ${Math.floor(m.progress * 100)}%`, 
+            progress 
+          });
+        }
+      },
+
+      corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core.wasm.js',
+    });
+
+    const { data } = await worker.recognize(file);
+    await worker.terminate();
+
+    const extractedText = data.text.trim();
+    
+    onProgress?.({ status: "complete", progress: 100 });
+    return {
+      success: true,
+      text: extractedText || `Image: ${file.name}\nNo readable text found.`,
+      confidence: data.confidence / 100, // Normalize to 0-1 range
+      words: data.words?.length || 0,
+    };
+    
+  } catch (error) {
+    console.error("Image OCR error:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to extract text from image",
+      text: `Image: ${file.name}\nOCR failed: ${error.message}`,
+    };
+  }
+},
 
   async analyzeWithAI(text, onProgress) {
     if (navigator.onLine) {

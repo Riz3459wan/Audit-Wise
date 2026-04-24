@@ -49,7 +49,6 @@ const Uploads = () => {
     baseLimit: 5,
     extraUploads: 0,
   });
-
   const planLimits = {
     free: { maxUploads: PLAN_LIMITS.free, maxFileSize: 5 * 1024 * 1024 },
     pro: { maxUploads: PLAN_LIMITS.pro, maxFileSize: 25 * 1024 * 1024 },
@@ -121,9 +120,9 @@ const Uploads = () => {
   };
 
   const handleFileSelect = async (event) => {
+    console.log(event)
     const files = Array.from(event.target.files);
     if (files.length === 0) return;
-
     const canUpload = await checkUploadLimit(files.length);
     if (!canUpload) return;
 
@@ -151,11 +150,10 @@ const Uploads = () => {
 
     setUploads((prev) => [...prev, ...newUploads]);
     setError("");
-  };
+  };3
 
   const processDocumentWithOCR = async (uploadItem, onProgress) => {
     onProgress?.({ status: "ocr_started", progress: 10 });
-
     let result;
     try {
       if (uploadItem.file.type === "application/pdf") {
@@ -189,7 +187,7 @@ const Uploads = () => {
       throw new Error(error.message || "Failed to process document");
     }
   };
-
+console.log(uploads)
   const handleProcessAndAnalyze = async (
     uploadItem,
     shouldRedirect = false,
@@ -255,7 +253,6 @@ const Uploads = () => {
       };
 
       const documentId = await dbHelpers.saveDocument(user.id, documentData);
-
       const analysisData = {
         extractedText: ocrResult.text,
         confidence: aiResult.confidence || 0.8,
@@ -293,11 +290,9 @@ const Uploads = () => {
             : u,
         ),
       );
-
       if (shouldRedirect) {
         navigate("/dashboard");
       }
-
       return true;
     } catch (err) {
       console.error("Processing error:", err);
@@ -518,7 +513,7 @@ const Uploads = () => {
                 backgroundColor: "transparent",
                 cursor: monthlyUsage.remaining <= 0 ? "not-allowed" : "pointer",
                 opacity: monthlyUsage.remaining <= 0 ? 0.5 : 1,
-                "&:hover": {
+                ":hover": {
                   borderColor:
                     monthlyUsage.remaining <= 0 ? "#f44336" : "#6366f1",
                   backgroundColor:
@@ -526,6 +521,7 @@ const Uploads = () => {
                       ? "transparent"
                       : "rgba(99, 102, 241, 0.02)",
                 },
+                
               }}
               onClick={() =>
                 monthlyUsage.remaining > 0 && fileInputRef.current?.click()
