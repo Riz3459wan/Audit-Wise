@@ -1,11 +1,18 @@
 import * as pdfjsLib from "pdfjs-dist";
 import mammoth from "mammoth";
 //This is used to get the worker file/pointing the location of the worker file
-const pdfjsVersion = "4.10.38";
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsVersion}/build/pdf.worker.min.mjs`;
+//if we want sepecific version use this URl
+// const pdfjsVersion = "4.10.38";
+// pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfjsVersion}/build/pdf.worker.min.mjs`;
+
+//this will use always use the latest version
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist/build/pdf.worker.min.mjs`;
 import Tesseract from 'tesseract.js';
-//Here we have to give the token of the user for using the api;
-const HF_TOKEN = "";
+//Here we have to give the user token of the user for using the api;
+const HF_TOKEN = "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";
+
+
+
 
 export const ocrService = {
   async extractTextFromPDF(file, onProgress) {
@@ -71,58 +78,59 @@ export const ocrService = {
     }
   },
 
- async extractTextFromImage(file, onProgress) {
-  try {
-    onProgress?.({ status: "loading_image", progress: 5 });
-    
-    if (!file.type.startsWith('image/')) {
-      throw new Error('Invalid file type. Expected an image.');
+  async extractTextFromImage(file, onProgress) {
+    try {
+      onProgress?.({ status: "loading_image", progress: 5 });
+
+      if (!file.type.startsWith('image/')) {
+        throw new Error('Invalid file type. Expected an image.');
+      }
+
+      onProgress?.({ status: "initializing_ocr", progress: 10 });
+
+      const worker = await Tesseract.createWorker('eng', 1, {
+        logger: (m) => {
+          if (m.status === 'recognizing text') {
+            const progress = 10 + Math.floor(m.progress * 85);
+            onProgress?.({
+              status: `extracting_text: ${Math.floor(m.progress * 100)}%`,
+              progress
+            });
+          }
+        },
+
+        corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core.wasm.js',
+      });
+
+      const { data } = await worker.recognize(file);
+      await worker.terminate();
+
+      const extractedText = data.text.trim();
+      console.log(data.confidence)
+      onProgress?.({ status: "complete", progress: 100 });
+      return {
+        success: true,
+        text: extractedText || `Image: ${file.name}\nNo readable text found.`,
+        confidence: data.confidence / 100,
+        words: data.words?.length || 0,
+      };
+
+    } catch (error) {
+      console.error("Image OCR error:", error);
+      return {
+        success: false,
+        error: error.message || "Failed to extract text from image",
+        text: `Image: ${file.name}\nOCR failed: ${error.message}`,
+      };
     }
-
-    onProgress?.({ status: "initializing_ocr", progress: 10 });
-
-    const worker = await Tesseract.createWorker('eng', 1, {
-      logger: (m) => {
-        if (m.status === 'recognizing text') {
-          const progress = 10 + Math.floor(m.progress * 85);
-          onProgress?.({ 
-            status: `extracting_text: ${Math.floor(m.progress * 100)}%`, 
-            progress 
-          });
-        }
-      },
-
-      corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core.wasm.js',
-    });
-
-    const { data } = await worker.recognize(file);
-    await worker.terminate();
-
-    const extractedText = data.text.trim();
-    
-    onProgress?.({ status: "complete", progress: 100 });
-    return {
-      success: true,
-      text: extractedText || `Image: ${file.name}\nNo readable text found.`,
-      confidence: data.confidence / 100, // Normalize to 0-1 range
-      words: data.words?.length || 0,
-    };
-    
-  } catch (error) {
-    console.error("Image OCR error:", error);
-    return {
-      success: false,
-      error: error.message || "Failed to extract text from image",
-      text: `Image: ${file.name}\nOCR failed: ${error.message}`,
-    };
-  }
-},
-
+  },
+  //Directly using hugging face api will cause cors origin error,because of this statement "HuggingFace API does NOT allow client-side CORS access for this endpoint"
+  //always cdn will run 
+  // have to handle the preflight response in backend to make this api work.This will be used after handling the error
   async analyzeWithAI(text, onProgress) {
     if (navigator.onLine) {
       try {
         onProgress?.({ status: "calling_cloud_api", progress: 30 });
-
         const response = await fetch(
           "https://api-inference.huggingface.co/models/distilbert-base-uncased-finetuned-sst-2-english",
           {

@@ -42,6 +42,7 @@ import ShieldOutlinedIcon from "@mui/icons-material/ShieldOutlined";
 import useDebounce from "../../hooks/UseDebounce";
 import { useTheme } from "../../context/ThemeContext";
 import { useAuth } from "../../hooks/useAuth";
+import { db } from "../../database/db";
 
 const Navbar = () => {
   const navigate = useNavigate();
@@ -55,6 +56,12 @@ const Navbar = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
   const [logoutError, setLogoutError] = useState("");
+  const [profileData, setProfileData] = useState({
+    name: "",
+    email: "",
+    avatar: null,
+    plan: "Free",
+  });
 
   const debouncedSearch = useDebounce(searchQuery, 500);
   const open = Boolean(anchorEl);
@@ -76,7 +83,55 @@ const Navbar = () => {
     document.body.style.color = darkMode ? "#ffffff" : "#0f172a";
   }, [darkMode]);
 
+  useEffect(() => {
+    loadUserProfile();
+  }, [user]);
+
+  useEffect(() => {
+    const handleProfileUpdate = () => {
+      loadUserProfile();
+    };
+
+    window.addEventListener("profileUpdated", handleProfileUpdate);
+    return () => {
+      window.removeEventListener("profileUpdated", handleProfileUpdate);
+    };
+  }, []);
+
+  const loadUserProfile = async () => {
+    if (!user?.id) {
+      setProfileData({
+        name: user?.name || "User Name",
+        email: user?.email || "user@gmail.com",
+        avatar: null,
+        plan: user?.plan || "Free",
+      });
+      return;
+    }
+
+    try {
+      const userData = await db.users.get(user.id);
+      if (userData) {
+        setProfileData({
+          name: userData.fullName || user.name || "User Name",
+          email: userData.email || user.email || "user@gmail.com",
+          avatar: userData.avatar || null,
+          plan: userData.plan || user.plan || "Free",
+        });
+      }
+    } catch (error) {
+      console.error("Failed to load user profile:", error);
+      setProfileData({
+        name: user?.name || "User Name",
+        email: user?.email || "user@gmail.com",
+        avatar: null,
+        plan: user?.plan || "Free",
+      });
+    }
+  };
+
   const handleMenuOpen = (event) => {
+    loadUserProfile();
     setAnchorEl(event.currentTarget);
   };
 
@@ -93,7 +148,7 @@ const Navbar = () => {
 
   const handleSetting = () => {
     handleClose();
-    navigate("/profileSetting");
+    navigate("/setting");
   };
 
   const handleSearch = (value) => {
@@ -131,6 +186,15 @@ const Navbar = () => {
   const isActive = (path) => {
     return location.pathname === path;
   };
+
+  const UserAvatar = ({ size = 32 }) => (
+    <Avatar
+      src={profileData.avatar}
+      sx={{ width: size, height: size, bgcolor: "#6366f1" }}
+    >
+      {!profileData.avatar && (profileData.name?.charAt(0)?.toUpperCase() || "U")}
+    </Avatar>
+  );
 
   const drawerContent = (
     <Box sx={{ width: 280, p: 2 }}>
@@ -203,19 +267,21 @@ const Navbar = () => {
       <Box sx={{ mt: "auto", pt: 3 }}>
         <Divider sx={{ mb: 2 }} />
         <Box sx={{ px: 1, py: 1 }}>
-          <Typography variant="body2" color="textSecondary" gutterBottom>
-            Logged in as
-          </Typography>
-          <Typography variant="body2" fontWeight="medium" noWrap>
-            {user?.name || "User Name"}
-          </Typography>
-          <Typography variant="caption" color="textSecondary" noWrap>
-            {user?.email || "user@gmail.com"}
-          </Typography>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}>
+            <UserAvatar size={40} />
+            <Box>
+              <Typography variant="body2" fontWeight="medium" noWrap>
+                {profileData.name}
+              </Typography>
+              <Typography variant="caption" color="textSecondary" noWrap>
+                {profileData.email}
+              </Typography>
+            </Box>
+          </Box>
           <Chip
-            label={`${user?.plan || "Free"} Plan`}
+            label={`${profileData.plan} Plan`}
             size="small"
-            sx={{ mt: 1, bgcolor: "#6366f1", color: "white" }}
+            sx={{ bgcolor: "#6366f1", color: "white" }}
           />
         </Box>
       </Box>
@@ -319,15 +385,13 @@ const Navbar = () => {
                 cursor: "pointer",
               }}
             >
-              <Avatar sx={{ width: 32, height: 32, bgcolor: "#6366f1" }}>
-                {user?.name?.charAt(0).toUpperCase() || "U"}
-              </Avatar>
+              <UserAvatar size={32} />
               {!isMobile && (
                 <Typography
                   variant="body2"
                   sx={{ display: { xs: "none", sm: "block" } }}
                 >
-                  {user?.name?.split(" ")[0] || "Account"}
+                  {profileData.name?.split(" ")[0] || "Account"}
                 </Typography>
               )}
             </Box>
@@ -347,25 +411,15 @@ const Navbar = () => {
               }}
             >
               <Box sx={{ px: 2, py: 1 }} align="center">
-                <Avatar
-                  sx={{
-                    width: 48,
-                    height: 48,
-                    mx: "auto",
-                    mb: 1,
-                    bgcolor: "#6366f1",
-                  }}
-                >
-                  {user?.name?.charAt(0).toUpperCase() || "U"}
-                </Avatar>
-                <Typography fontWeight="bold">
-                  {user?.name || "User Name"}
+                <UserAvatar size={48} />
+                <Typography fontWeight="bold" sx={{ mt: 1 }}>
+                  {profileData.name}
                 </Typography>
                 <Typography variant="body2" color="gray">
-                  {user?.email || "user@gmail.com"}
+                  {profileData.email}
                 </Typography>
                 <Chip
-                  label={`${user?.plan || "Free"} Plan`}
+                  label={`${profileData.plan} Plan`}
                   size="small"
                   sx={{ mt: 1, bgcolor: "#6366f1", color: "white" }}
                 />
@@ -408,7 +462,6 @@ const Navbar = () => {
         {drawerContent}
       </Drawer>
 
-      {/* Logout Dialog */}
       <Dialog
         open={logoutDialogOpen}
         onClose={handleLogoutCancel}

@@ -55,7 +55,7 @@ import { useNavigate } from "react-router-dom";
 import { db } from "../database/db";
 import { useAuth } from "../hooks/useAuth";
 
-const FinancialDashboard = () => {
+const Dashboard = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const theme = useTheme();
@@ -1021,4 +1021,4 @@ const FinancialDashboard = () => {
   );
 };
 
-export default FinancialDashboard;
+export default Dashboard;

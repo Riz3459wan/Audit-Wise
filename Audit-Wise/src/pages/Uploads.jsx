@@ -150,8 +150,7 @@ const Uploads = () => {
 
     setUploads((prev) => [...prev, ...newUploads]);
     setError("");
-  };3
-
+  };
   const processDocumentWithOCR = async (uploadItem, onProgress) => {
     onProgress?.({ status: "ocr_started", progress: 10 });
     let result;
@@ -187,7 +186,6 @@ const Uploads = () => {
       throw new Error(error.message || "Failed to process document");
     }
   };
-console.log(uploads)
   const handleProcessAndAnalyze = async (
     uploadItem,
     shouldRedirect = false,
@@ -531,7 +529,7 @@ console.log(uploads)
                 type="file"
                 ref={fileInputRef}
                 multiple
-                accept=".jpg,.jpeg,.png,.pdf,.doc,.docx"
+                accept=".jpg,.jpeg,.png,.pdf,.doc,.docx,.xlsx"
                 style={{ display: "none" }}
                 onChange={handleFileSelect}
                 disabled={
