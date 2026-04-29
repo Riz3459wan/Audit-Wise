@@ -5,3 +5,7 @@ Audit-Wise/.vite
 node_modules
 dist
 .env
+Audit-Wise/.env
+Audit-Wise/.vite
+node_modules
+dist
