@@ -30,7 +30,6 @@ const RISK_WEIGHTS = {
   LARGE_TXN_COUNT: 10,
 };
 
-<<<<<<< HEAD
 let hfClient = null;
 
 function getHuggingFaceClient() {
@@ -69,7 +68,6 @@ async function callHuggingFaceAPI(text, onProgress) {
     } catch (error) {
       continue;
     }
-=======
 const REVENUE_PATTERNS = [
   /(?:revenue|total revenue|income|total income|sales|total sales)[:\s]*₹?\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/i,
   /(?:total|sum)[:\s]*₹?\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)[:\s]*(?:revenue|income)/i,
@@ -125,12 +123,10 @@ function matchFirstPattern(text, patterns) {
   for (const pattern of patterns) {
     const match = text.match(pattern);
     if (match) return parseAmount(match[1]);
->>>>>>> main
   }
   return null;
 }
 
-<<<<<<< HEAD
 function parseSentimentFromAPI(apiResponse) {
   if (!apiResponse?.result) return null;
 
@@ -552,7 +548,6 @@ function extractTransactionsFromText(text) {
       }
     }
   }
-=======
 function parseTransactionMatch(match, pattern, index, fallbackCount) {
   let date, id, type, amount, status;
 
@@ -610,13 +605,11 @@ function extractTransactions(text) {
       }
     }
   });
->>>>>>> main
 
   return transactions;
 }
 
 function calculateTransactionStats(transactions) {
-<<<<<<< HEAD
   let totalCredit = 0;
   let totalDebit = 0;
   let failedCount = 0;
@@ -642,7 +635,6 @@ function extractAuditData(text) {
   let expenses = stats.totalDebit;
   let profit = revenue - expenses;
 
-=======
   return transactions.reduce(
     (acc, txn) => {
       if (txn.type === "Credit") acc.totalCredit += txn.amount;
@@ -707,7 +699,6 @@ function extractAuditData(text) {
   const revenue = summary.revenue;
   const expenses = summary.expenses;
   const profit = summary.profit;
->>>>>>> main
   const profitMargin =
     revenue > 0 ? parseFloat(((profit / revenue) * 100).toFixed(2)) : 0;
 
@@ -742,11 +733,9 @@ function calculateRisk(text, data) {
   );
 
   if (data.failedCount > 0) riskScore += RISK_WEIGHTS.FAILED_TXN;
-<<<<<<< HEAD
   if (data.profit < 0) riskScore += RISK_WEIGHTS.NEGATIVE_PROFIT;
   if (data.totalDebit > data.totalCredit * 1.2)
     riskScore += RISK_WEIGHTS.HIGH_DEBIT;
-=======
   if (lowerText.includes("fraud") || lowerText.includes("suspicious"))
     riskScore += RISK_WEIGHTS.FRAUD;
   if (lowerText.includes("violation") || lowerText.includes("non-compliance"))
@@ -755,7 +744,6 @@ function calculateRisk(text, data) {
   if (data.totalDebit > data.totalCredit * 1.2)
     riskScore += RISK_WEIGHTS.HIGH_DEBIT;
   if (data.transactions.length > 100) riskScore += RISK_WEIGHTS.LARGE_TXN_COUNT;
->>>>>>> main
 
   riskScore = Math.min(100, Math.max(0, riskScore));
 
@@ -766,7 +754,6 @@ function calculateRisk(text, data) {
   return { riskScore, riskLevel };
 }
 
-<<<<<<< HEAD
 function determineSentiment(apiSentiment, data, riskLevel) {
   if (apiSentiment) return apiSentiment;
 
@@ -774,19 +761,16 @@ function determineSentiment(apiSentiment, data, riskLevel) {
   if (data.profit > 0 && data.profitMargin > 20) return "POSITIVE";
   if (data.profit > 0) return "POSITIVE";
   if (data.profit < 0) return "NEGATIVE";
-=======
 function determineSentiment(data, riskLevel) {
   if (riskLevel === "HIGH") return "NEGATIVE";
   if (riskLevel === "LOW" && data.profit > 0) return "POSITIVE";
   if (data.profit > 0 && data.revenue > data.expenses) return "POSITIVE";
   if (data.profit < 0 || data.failedCount > 0) return "NEGATIVE";
->>>>>>> main
   return "NEUTRAL";
 }
 
 function generateKeyFindings(text, data) {
   const findings = [];
-<<<<<<< HEAD
 
   if (data.transactions.length > 0) {
     findings.push(`Total ${data.transactions.length} transactions analyzed`);
@@ -840,7 +824,6 @@ function generateKeyFindings(text, data) {
   }
 
   return findings.slice(0, 6);
-=======
   const lowerText = text.toLowerCase();
 
   if (data.revenue > 0)
@@ -878,7 +861,6 @@ function generateKeyFindings(text, data) {
     );
 
   return findings;
->>>>>>> main
 }
 
 function generateRecommendations(data, riskLevel) {
@@ -887,7 +869,6 @@ function generateRecommendations(data, riskLevel) {
   if (riskLevel === "HIGH") {
     recommendations.push(
       "IMMEDIATE ACTION: Schedule urgent detailed audit investigation",
-<<<<<<< HEAD
       "Review all transactions for potential discrepancies",
       "Implement enhanced internal controls",
     );
@@ -901,7 +882,6 @@ function generateRecommendations(data, riskLevel) {
         `Investigate ${data.failedCount} failed transaction(s) immediately`,
       );
     }
-=======
       "Review all failed transactions and system errors immediately",
       "Implement enhanced internal controls and monitoring systems",
     );
@@ -912,16 +892,12 @@ function generateRecommendations(data, riskLevel) {
     recommendations.push(
       "Escalate findings to senior management for immediate action",
     );
->>>>>>> main
   } else if (riskLevel === "MEDIUM") {
     recommendations.push(
       "Schedule follow-up audit within 30-45 days",
       "Review flagged transactions for potential discrepancies",
       "Strengthen documentation and record-keeping processes",
-<<<<<<< HEAD
-=======
       "Monitor financial patterns for emerging risks",
->>>>>>> main
     );
   } else {
     recommendations.push(
@@ -931,7 +907,6 @@ function generateRecommendations(data, riskLevel) {
     );
   }
 
-<<<<<<< HEAD
   if (data.profit > 0 && data.profitMargin > 50) {
     recommendations.push(
       "Excellent profit margin maintained. Consider expansion opportunities.",
@@ -995,7 +970,6 @@ function generateSummary(text, data, riskLevel, sentiment) {
   parts.push(
     `Overall sentiment is ${sentimentText.toLowerCase()} with ${riskLevel.toLowerCase()} risk level.`,
   );
-=======
   if (data.failedCount > 0)
     recommendations.push(
       `Investigate ${data.failedCount} failed transaction(s) and resolve underlying issues`,
@@ -1040,23 +1014,18 @@ function generateSummary(text, data, riskLevel) {
         ? "low risk"
         : "moderate risk";
   parts.push(`Overall risk assessment: ${riskText}.`);
->>>>>>> main
 
   const summary =
     parts.length > 0
       ? parts.join(" ")
-<<<<<<< HEAD
       : "Document processed successfully for audit review.";
-=======
       : "Document processed successfully for audit review. No specific financial data detected.";
->>>>>>> main
 
   return summary.length > MAX_SUMMARY_LENGTH
     ? `${summary.substring(0, MAX_SUMMARY_LENGTH)}...`
     : summary;
 }
 
-<<<<<<< HEAD
 function calculateConfidence(data, hasApiResult = false) {
   let confidence = hasApiResult ? 0.85 : 0.7;
   if (data.transactions.length > 0) confidence += 0.1;
@@ -1067,7 +1036,6 @@ function calculateConfidence(data, hasApiResult = false) {
 }
 
 export async function runAuditAnalysis(text, onProgress) {
-=======
 function calculateConfidence(data) {
   let confidence = 0.7;
   if (data.revenue > 0) confidence += 0.1;
@@ -1079,7 +1047,6 @@ function calculateConfidence(data) {
 }
 
 export function runAuditAnalysis(text) {
->>>>>>> main
   if (!text?.trim()) {
     return {
       success: false,
@@ -1108,7 +1075,6 @@ export function runAuditAnalysis(text) {
   }
 
   const auditData = extractAuditData(text);
-<<<<<<< HEAD
 
   let apiSentiment = null;
   let mode = "local_analysis";
@@ -1133,14 +1099,12 @@ export function runAuditAnalysis(text) {
   const recommendations = generateRecommendations(auditData, risk.riskLevel);
   const summary = generateSummary(text, auditData, risk.riskLevel, sentiment);
   const confidence = calculateConfidence(auditData, mode === "cloud_ai");
-=======
   const risk = calculateRisk(text, auditData);
   const sentiment = determineSentiment(auditData, risk.riskLevel);
   const keyFindings = generateKeyFindings(text, auditData);
   const recommendations = generateRecommendations(auditData, risk.riskLevel);
   const summary = generateSummary(text, auditData, risk.riskLevel);
   const confidence = calculateConfidence(auditData);
->>>>>>> main
   const wordCount = text.split(/\s+/).filter((w) => w.length > 0).length;
 
   return {
@@ -1165,11 +1129,8 @@ export function runAuditAnalysis(text) {
     confidence,
     wordCount,
     charCount: text.length,
-<<<<<<< HEAD
     mode,
-=======
     mode: "local_analysis",
->>>>>>> main
   };
 }
 
@@ -1178,7 +1139,6 @@ async function performOCR(imageFile, onProgress) {
     Tesseract.recognize(imageFile, "eng", {
       logger: (m) => {
         if (m.status === "recognizing text") {
-<<<<<<< HEAD
           onProgress?.({
             status: "ocr_processing",
             progress: Math.floor(m.progress * 100),
@@ -1188,7 +1148,6 @@ async function performOCR(imageFile, onProgress) {
     })
       .then(({ data: { text } }) => resolve(text))
       .catch(reject);
-=======
           const progress = Math.floor(m.progress * 100);
           onProgress?.({ status: "ocr_processing", progress });
         }
@@ -1200,35 +1159,29 @@ async function performOCR(imageFile, onProgress) {
       .catch((error) => {
         reject(error);
       });
->>>>>>> main
   });
 }
 
 async function extractTextFromImageWithOCR(file, onProgress) {
   try {
     onProgress?.({ status: "loading_image", progress: 10 });
-<<<<<<< HEAD
     const imageUrl = URL.createObjectURL(file);
     const img = new Image();
-=======
 
     const imageUrl = URL.createObjectURL(file);
     const img = new Image();
 
->>>>>>> main
     await new Promise((resolve, reject) => {
       img.onload = resolve;
       img.onerror = reject;
       img.src = imageUrl;
     });
-<<<<<<< HEAD
     onProgress?.({ status: "ocr_started", progress: 30 });
     const text = await performOCR(file, onProgress);
     URL.revokeObjectURL(imageUrl);
     onProgress?.({ status: "ocr_complete", progress: 100 });
     return text;
   } catch (error) {
-=======
 
     onProgress?.({ status: "ocr_started", progress: 30 });
 
@@ -1241,7 +1194,6 @@ async function extractTextFromImageWithOCR(file, onProgress) {
     return text;
   } catch (error) {
     console.error("OCR error:", error);
->>>>>>> main
     throw error;
   }
 }
@@ -1270,27 +1222,21 @@ export const ocrService = {
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
         const pageText = textContent.items.map((item) => item.str).join(" ");
-<<<<<<< HEAD
         if (pageText?.trim()) fullText += pageText + "\n";
-=======
 
         if (pageText?.trim()) {
           fullText += pageText + "\n";
         }
->>>>>>> main
       }
 
       onProgress?.({ status: "complete", progress: 100 });
 
       return {
         success: true,
-<<<<<<< HEAD
         text: fullText.trim() || `PDF Document: ${file.name}`,
-=======
         text:
           fullText.trim() ||
           `PDF Document: ${file.name}\nPlease ensure the PDF contains selectable text for analysis.`,
->>>>>>> main
         pagesProcessed: numPages,
       };
     } catch (error) {
@@ -1311,13 +1257,10 @@ export const ocrService = {
       onProgress?.({ status: "complete", progress: 100 });
       return {
         success: true,
-<<<<<<< HEAD
         text: result.value?.trim() || `Word Document: ${file.name}`,
-=======
         text:
           result.value?.trim() ||
           `Word Document: ${file.name}\nDocument uploaded successfully for audit processing.`,
->>>>>>> main
       };
     } catch (error) {
       console.error("DOC extraction error:", error);
@@ -1331,7 +1274,6 @@ export const ocrService = {
   async extractTextFromExcel(file, onProgress) {
     try {
       onProgress?.({ status: "processing_excel", progress: 30 });
-<<<<<<< HEAD
       const arrayBuffer = await file.arrayBuffer();
       const workbook = XLSX.read(arrayBuffer, { type: "array" });
       let fullText = "";
@@ -1351,7 +1293,6 @@ export const ocrService = {
         });
       }
       onProgress?.({ status: "complete", progress: 100 });
-=======
 
       const arrayBuffer = await file.arrayBuffer();
       const workbook = XLSX.read(arrayBuffer, { type: "array" });
@@ -1371,7 +1312,6 @@ export const ocrService = {
 
       onProgress?.({ status: "complete", progress: 100 });
 
->>>>>>> main
       return {
         success: true,
         text:
@@ -1379,10 +1319,7 @@ export const ocrService = {
           `Excel File: ${file.name}\nNo data found in spreadsheet.`,
       };
     } catch (error) {
-<<<<<<< HEAD
-=======
       console.error("Excel extraction error:", error);
->>>>>>> main
       return {
         success: true,
         text: `Excel File: ${file.name}\nUploaded successfully for audit processing.`,
@@ -1393,16 +1330,13 @@ export const ocrService = {
   async extractTextFromImage(file, onProgress) {
     try {
       onProgress?.({ status: "processing_image", progress: 20 });
-<<<<<<< HEAD
       const extractedText = await extractTextFromImageWithOCR(file, onProgress);
       onProgress?.({ status: "complete", progress: 100 });
-=======
 
       const extractedText = await extractTextFromImageWithOCR(file, onProgress);
 
       onProgress?.({ status: "complete", progress: 100 });
 
->>>>>>> main
       return {
         success: true,
         text:
@@ -1410,10 +1344,7 @@ export const ocrService = {
           `Image Document: ${file.name}\nImage uploaded for audit review.`,
       };
     } catch (error) {
-<<<<<<< HEAD
-=======
       console.error("Image extraction error:", error);
->>>>>>> main
       return {
         success: true,
         text: `Image: ${file.name}\nUploaded for audit processing.`,
@@ -1423,11 +1354,8 @@ export const ocrService = {
 
   async analyzeWithAI(text, onProgress) {
     onProgress?.({ status: "analyzing", progress: 40 });
-<<<<<<< HEAD
     const result = await runAuditAnalysis(text, onProgress);
-=======
     const result = runAuditAnalysis(text);
->>>>>>> main
     onProgress?.({ status: "complete", progress: 100 });
     return result;
   },
