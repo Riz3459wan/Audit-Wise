@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Box,
   Grid,
@@ -23,6 +23,12 @@ import {
   Tooltip,
   useMediaQuery,
   useTheme,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
 } from "@mui/material";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import TrendingDownIcon from "@mui/icons-material/TrendingDown";
@@ -35,10 +41,11 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import BarChartIcon from "@mui/icons-material/BarChart";
 import PieChartIcon from "@mui/icons-material/PieChart";
+import ReceiptIcon from "@mui/icons-material/Receipt";
+import ErrorIcon from "@mui/icons-material/Error";
+import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import {
-  LineChart,
-  Line,
-  BarChart,
+  ComposedChart,
   Bar,
   PieChart,
   Pie,
@@ -49,11 +56,728 @@ import {
   Tooltip as RechartsTooltip,
   Legend,
   ResponsiveContainer,
-  ComposedChart,
+  Line,
 } from "recharts";
 import { useNavigate } from "react-router-dom";
 import { db } from "../database/db";
 import { useAuth } from "../hooks/useAuth";
+
+const PIE_COLORS = [
+  "#6366f1",
+  "#10b981",
+  "#f59e0b",
+  "#ef4444",
+  "#8b5cf6",
+  "#ec4899",
+];
+
+const TREND_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun"];
+
+const ANOMALY_KEYWORDS = ["failed", "error", "warning", "loss", "irregular"];
+
+const MAX_RECENT_DOCS = 10;
+const MAX_TRANSACTIONS_DISPLAY = 10;
+
+function formatCurrency(amount, currency = "INR") {
+  if (amount === null || amount === undefined) return "₹0";
+  try {
+    return new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 0,
+      minimumFractionDigits: 0,
+    }).format(amount);
+  } catch {
+    return `₹${Number(amount).toLocaleString()}`;
+  }
+}
+
+function formatDate(dateString) {
+  if (!dateString) return "N/A";
+  try {
+    return new Date(dateString).toLocaleDateString("en-IN", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  } catch {
+    return String(dateString);
+  }
+}
+
+function getRiskColor(score) {
+  if (score == null) return "#6b7280";
+  if (score < 35) return "#10b981";
+  if (score < 65) return "#f59e0b";
+  return "#ef4444";
+}
+
+function getRiskLabel(score) {
+  if (score == null) return "Not Available";
+  if (score < 35) return "Low Risk";
+  if (score < 65) return "Medium Risk";
+  return "High Risk";
+}
+
+function getSeverityColor(severity) {
+  switch (severity?.toLowerCase()) {
+    case "high":
+      return "#ef4444";
+    case "medium":
+      return "#f59e0b";
+    case "low":
+      return "#10b981";
+    default:
+      return "#6b7280";
+  }
+}
+
+function detectDocumentType(text) {
+  const lower = (text || "").toLowerCase();
+  if (lower.includes("bank statement") || lower.includes("account statement"))
+    return "bank_statement";
+  if (lower.includes("invoice")) return "invoice";
+  if (lower.includes("tax") || lower.includes("gst")) return "tax_document";
+  if (lower.includes("receipt")) return "receipt";
+  return "financial_document";
+}
+
+function safeParseJSON(value, fallback = []) {
+  if (!value) return fallback;
+  if (typeof value !== "string") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+function generateTrendDataFromTransactions(transactions) {
+  if (!transactions || transactions.length === 0) {
+    return TREND_MONTHS.map((month) => ({
+      month,
+      revenue: 0,
+      expenses: 0,
+      profit: 0,
+    }));
+  }
+
+  const monthlyData = {};
+  TREND_MONTHS.forEach((month) => {
+    monthlyData[month] = { revenue: 0, expenses: 0 };
+  });
+
+  transactions.forEach((txn) => {
+    const date = new Date(txn.date);
+    const monthIndex = date.getMonth();
+    const monthName = TREND_MONTHS[monthIndex];
+
+    if (monthName && txn.status === "COMPLETED") {
+      if (txn.type === "Credit") {
+        monthlyData[monthName].revenue += txn.amount;
+      } else if (txn.type === "Debit") {
+        monthlyData[monthName].expenses += txn.amount;
+      }
+    }
+  });
+
+  return TREND_MONTHS.map((month) => ({
+    month,
+    revenue: monthlyData[month].revenue,
+    expenses: monthlyData[month].expenses,
+    profit: monthlyData[month].revenue - monthlyData[month].expenses,
+  }));
+}
+
+function generateCategoryDataFromTransactions(transactions) {
+  if (!transactions || transactions.length === 0) {
+    return [{ name: "No Data", value: 1 }];
+  }
+
+  const debitTransactions = transactions.filter(
+    (txn) => txn.type === "Debit" && txn.status === "COMPLETED",
+  );
+  const totalDebits = debitTransactions.reduce(
+    (sum, txn) => sum + txn.amount,
+    0,
+  );
+
+  if (totalDebits === 0) {
+    return [{ name: "No Expenses", value: 1 }];
+  }
+
+  const categories = {};
+  debitTransactions.forEach((txn) => {
+    let category = "Other";
+    const desc = (txn.description || txn.id || "").toLowerCase();
+
+    if (desc.includes("salary") || desc.includes("payroll"))
+      category = "Salaries";
+    else if (desc.includes("marketing") || desc.includes("advertising"))
+      category = "Marketing";
+    else if (desc.includes("rent") || desc.includes("lease")) category = "Rent";
+    else if (desc.includes("utility") || desc.includes("electricity"))
+      category = "Utilities";
+    else if (desc.includes("software") || desc.includes("subscription"))
+      category = "Software";
+    else if (desc.includes("travel") || desc.includes("transport"))
+      category = "Travel";
+
+    categories[category] = (categories[category] || 0) + txn.amount;
+  });
+
+  return Object.entries(categories).map(([name, value]) => ({ name, value }));
+}
+
+function parseAnomalies(findings) {
+  return findings
+    .filter((f) => {
+      const text = typeof f === "string" ? f : f.finding || "";
+      return ANOMALY_KEYWORDS.some((kw) => text.toLowerCase().includes(kw));
+    })
+    .slice(0, 3)
+    .map((f, idx) => ({
+      type: `anomaly_${idx + 1}`,
+      description: typeof f === "string" ? f : f.finding || f,
+      severity: idx === 0 ? "high" : "medium",
+    }));
+}
+
+function calculateFinancialMetrics(document, analysis) {
+  const keyFindings = safeParseJSON(analysis.keyFindings, []);
+  const recommendations = safeParseJSON(analysis.recommendations, []);
+  const transactions = safeParseJSON(analysis.transactions, []);
+
+  const revenue = analysis.revenue || 0;
+  const expenses = analysis.expenses || 0;
+  const netProfit = analysis.profit || 0;
+  const profitMargin = analysis.profitMargin || 0;
+  const riskScore = analysis.riskScore || 50;
+  const anomaliesCount = analysis.anomalies || analysis.failedCount || 0;
+  const totalCredit = analysis.totalCredit || 0;
+  const totalDebit = analysis.totalDebit || 0;
+
+  return {
+    totalRevenue: revenue,
+    totalExpenses: expenses,
+    netProfit,
+    profitMargin,
+    riskScore,
+    severity: analysis.riskLevel || "Medium",
+    anomaliesCount,
+    totalCredit,
+    totalDebit,
+    currency: "INR",
+    revenueData: generateTrendDataFromTransactions(transactions),
+    categoryData: generateCategoryDataFromTransactions(transactions),
+    anomalies: parseAnomalies(keyFindings),
+    keyFindings,
+    recommendations,
+    sentiment: analysis.sentiment || "Neutral",
+    confidence: analysis.confidence || 0.8,
+    wordCount: analysis.wordCount || 0,
+    summary: analysis.summary || "",
+    documentType: detectDocumentType(analysis.extractedText || ""),
+    transactions,
+    failedCount: analysis.failedCount || 0,
+  };
+}
+
+const TransactionTable = React.memo(
+  ({ transactions, isMobile, formatCurrencyFn }) => {
+    if (!transactions?.length) {
+      return (
+        <Box sx={{ textAlign: "center", py: 4 }}>
+          <ReceiptIcon sx={{ fontSize: 48, color: "text.secondary", mb: 2 }} />
+          <Typography color="textSecondary">
+            No transaction data available
+          </Typography>
+        </Box>
+      );
+    }
+
+    return (
+      <TableContainer component={Paper} sx={{ borderRadius: 3 }}>
+        <Table size={isMobile ? "small" : "medium"}>
+          <TableHead sx={{ bgcolor: "#6366f1" }}>
+            <TableRow>
+              {["Date", "Transaction ID", "Type", "Amount", "Status"].map(
+                (h) => (
+                  <TableCell
+                    key={h}
+                    align={h === "Amount" ? "right" : "left"}
+                    sx={{ color: "white", fontWeight: "bold" }}
+                  >
+                    {h}
+                  </TableCell>
+                ),
+              )}
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {transactions.slice(0, MAX_TRANSACTIONS_DISPLAY).map((txn, idx) => (
+              <TableRow key={`${txn.id}-${idx}`} hover>
+                <TableCell>{txn.date}</TableCell>
+                <TableCell>
+                  <Typography variant="body2" fontFamily="monospace">
+                    {txn.id}
+                  </Typography>
+                </TableCell>
+                <TableCell>
+                  <Chip
+                    label={txn.type}
+                    size="small"
+                    sx={{
+                      bgcolor: txn.type === "Credit" ? "#10b981" : "#ef4444",
+                      color: "white",
+                      fontWeight: "bold",
+                    }}
+                  />
+                </TableCell>
+                <TableCell align="right">
+                  <Typography fontWeight="bold">
+                    {formatCurrencyFn(txn.amount)}
+                  </Typography>
+                </TableCell>
+                <TableCell>
+                  <Chip
+                    label={txn.status}
+                    size="small"
+                    sx={{
+                      bgcolor:
+                        txn.status === "COMPLETED"
+                          ? "#10b981"
+                          : txn.status === "FAILED"
+                            ? "#ef4444"
+                            : "#f59e0b",
+                      color: "white",
+                    }}
+                  />
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+        {transactions.length > MAX_TRANSACTIONS_DISPLAY && (
+          <Box sx={{ p: 2, textAlign: "center" }}>
+            <Typography variant="caption" color="textSecondary">
+              Showing {MAX_TRANSACTIONS_DISPLAY} of {transactions.length}{" "}
+              transactions
+            </Typography>
+          </Box>
+        )}
+      </TableContainer>
+    );
+  },
+);
+
+TransactionTable.displayName = "TransactionTable";
+
+const KeyMetricsGrid = React.memo(({ metrics, isMobile }) => {
+  const metricsData = [
+    {
+      title: "Total Revenue",
+      value: formatCurrency(metrics.totalRevenue, metrics.currency),
+      icon: <AttachMoneyIcon />,
+      bgColor: "#10b981",
+    },
+    {
+      title: "Net Profit",
+      value: formatCurrency(metrics.netProfit, metrics.currency),
+      icon: metrics.netProfit >= 0 ? <TrendingUpIcon /> : <TrendingDownIcon />,
+      bgColor: metrics.netProfit >= 0 ? "#10b981" : "#ef4444",
+    },
+    {
+      title: "Profit Margin",
+      value: `${metrics.profitMargin}%`,
+      icon: <AssessmentIcon />,
+      bgColor: "#6366f1",
+    },
+    {
+      title: "Risk Score",
+      value: metrics.riskScore,
+      icon: <WarningIcon />,
+      bgColor: getRiskColor(metrics.riskScore),
+    },
+    {
+      title: "Sentiment",
+      value: metrics.sentiment || "Neutral",
+      icon: <TimelineIcon />,
+      bgColor: getSeverityColor(metrics.severity),
+    },
+    {
+      title: "Anomalies",
+      value: metrics.anomaliesCount,
+      icon: <ErrorIcon />,
+      bgColor: "#f59e0b",
+    },
+  ];
+
+  return (
+    <Grid container spacing={isMobile ? 2 : 3} sx={{ mb: 4 }}>
+      {metricsData.map((metric, idx) => (
+        <Grid item xs={12} sm={6} md={4} key={idx}>
+          <Card
+            sx={{
+              borderRadius: 3,
+              bgcolor: metric.bgColor,
+              boxShadow: 3,
+              transition: "transform 0.2s",
+              "&:hover": { transform: "translateY(-4px)", boxShadow: 6 },
+            }}
+          >
+            <CardContent>
+              <Box
+                display="flex"
+                justifyContent="space-between"
+                alignItems="center"
+              >
+                <Box>
+                  <Typography
+                    variant="body2"
+                    sx={{ color: "rgba(255,255,255,0.8)", mb: 1 }}
+                  >
+                    {metric.title}
+                  </Typography>
+                  <Typography
+                    variant="h5"
+                    fontWeight="bold"
+                    sx={{ color: "#ffffff" }}
+                  >
+                    {metric.value}
+                  </Typography>
+                </Box>
+                <Avatar
+                  sx={{
+                    bgcolor: "rgba(255,255,255,0.2)",
+                    width: 48,
+                    height: 48,
+                    color: "white",
+                  }}
+                >
+                  {metric.icon}
+                </Avatar>
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
+      ))}
+    </Grid>
+  );
+});
+
+KeyMetricsGrid.displayName = "KeyMetricsGrid";
+
+const RevenueChart = React.memo(({ data, currency }) => {
+  const hasData =
+    data?.length > 0 && data.some((d) => d.revenue !== 0 || d.expenses !== 0);
+
+  if (!hasData) {
+    return (
+      <Card sx={{ borderRadius: 3, boxShadow: 2 }}>
+        <CardContent>
+          <Typography variant="h6" fontWeight="bold" gutterBottom>
+            Revenue & Profit Analysis
+          </Typography>
+          <Box sx={{ textAlign: "center", py: 4 }}>
+            <BarChartIcon
+              sx={{ fontSize: 60, color: "text.secondary", mb: 2 }}
+            />
+            <Typography color="textSecondary">
+              No revenue data available
+            </Typography>
+          </Box>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card sx={{ borderRadius: 3, boxShadow: 2 }}>
+      <CardContent>
+        <Typography variant="h6" fontWeight="bold" gutterBottom>
+          Revenue & Profit Analysis
+        </Typography>
+        <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+          Revenue vs Expenses vs Profit Trend (Last 6 Months)
+        </Typography>
+        <ResponsiveContainer width="100%" height={350}>
+          <ComposedChart data={data}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="month" />
+            <YAxis
+              yAxisId="left"
+              tickFormatter={(v) => formatCurrency(v, currency)}
+            />
+            <YAxis yAxisId="right" orientation="right" />
+            <RechartsTooltip
+              formatter={(value, name) => [
+                formatCurrency(value, currency),
+                name === "profit"
+                  ? "Profit"
+                  : name === "revenue"
+                    ? "Revenue"
+                    : "Expenses",
+              ]}
+            />
+            <Legend />
+            <Bar
+              yAxisId="left"
+              dataKey="revenue"
+              fill="#10b981"
+              name="Revenue"
+              barSize={40}
+              radius={[8, 8, 0, 0]}
+            />
+            <Bar
+              yAxisId="left"
+              dataKey="expenses"
+              fill="#ef4444"
+              name="Expenses"
+              barSize={40}
+              radius={[8, 8, 0, 0]}
+            />
+            <Line
+              yAxisId="right"
+              type="monotone"
+              dataKey="profit"
+              stroke="#6366f1"
+              strokeWidth={3}
+              name="Profit"
+              dot={{ fill: "#6366f1", r: 6 }}
+            />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </CardContent>
+    </Card>
+  );
+});
+
+RevenueChart.displayName = "RevenueChart";
+
+const ExpenseDistribution = React.memo(({ data, currency }) => {
+  const hasData =
+    data?.length > 0 &&
+    data.some(
+      (d) => d.value !== 0 && d.name !== "No Data" && d.name !== "No Expenses",
+    );
+
+  if (!hasData) {
+    return (
+      <Card sx={{ borderRadius: 3, boxShadow: 2 }}>
+        <CardContent>
+          <Typography variant="h6" fontWeight="bold" gutterBottom>
+            Expense Distribution
+          </Typography>
+          <Box sx={{ textAlign: "center", py: 4 }}>
+            <PieChartIcon
+              sx={{ fontSize: 60, color: "text.secondary", mb: 2 }}
+            />
+            <Typography color="textSecondary">
+              No expense data available
+            </Typography>
+          </Box>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card sx={{ borderRadius: 3, boxShadow: 2 }}>
+      <CardContent>
+        <Typography variant="h6" fontWeight="bold" gutterBottom>
+          Expense Distribution
+        </Typography>
+        <ResponsiveContainer width="100%" height={300}>
+          <PieChart>
+            <Pie
+              data={data}
+              cx="50%"
+              cy="50%"
+              label={({ name, percent }) =>
+                `${name} ${(percent * 100).toFixed(0)}%`
+              }
+              outerRadius={100}
+              dataKey="value"
+            >
+              {data.map((_, index) => (
+                <Cell
+                  key={`cell-${index}`}
+                  fill={PIE_COLORS[index % PIE_COLORS.length]}
+                />
+              ))}
+            </Pie>
+            <RechartsTooltip
+              formatter={(value) => formatCurrency(value, currency)}
+            />
+            <Legend />
+          </PieChart>
+        </ResponsiveContainer>
+      </CardContent>
+    </Card>
+  );
+});
+
+ExpenseDistribution.displayName = "ExpenseDistribution";
+
+const RiskAssessment = React.memo(({ metrics }) => {
+  const riskScore = metrics.riskScore || 0;
+  const riskColor = getRiskColor(riskScore);
+
+  return (
+    <Card sx={{ borderRadius: 3, boxShadow: 2 }}>
+      <CardContent>
+        <Typography variant="h6" fontWeight="bold" gutterBottom>
+          Risk Assessment
+        </Typography>
+
+        <Box sx={{ textAlign: "center", mb: 3 }}>
+          <Box sx={{ position: "relative", display: "inline-block" }}>
+            <CircularProgress
+              variant="determinate"
+              value={riskScore}
+              size={120}
+              thickness={8}
+              sx={{ color: riskColor }}
+            />
+            <Box
+              sx={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                bottom: 0,
+                right: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Typography variant="h4" fontWeight="bold">
+                {riskScore}
+              </Typography>
+            </Box>
+          </Box>
+          <Chip
+            label={getRiskLabel(riskScore)}
+            sx={{
+              mt: 2,
+              display: "block",
+              bgcolor: riskColor,
+              color: "white",
+              fontWeight: "bold",
+              width: "fit-content",
+              mx: "auto",
+            }}
+          />
+        </Box>
+
+        <LinearProgress
+          variant="determinate"
+          value={riskScore}
+          sx={{
+            height: 8,
+            borderRadius: 4,
+            mb: 2,
+            "& .MuiLinearProgress-bar": { bgcolor: riskColor },
+          }}
+        />
+
+        {metrics.anomalies?.length > 0 && (
+          <>
+            <Divider sx={{ my: 2 }} />
+            <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
+              Detected Anomalies ({metrics.anomalies.length})
+            </Typography>
+            {metrics.anomalies.map((anomaly, idx) => (
+              <Alert
+                key={idx}
+                severity={anomaly.severity === "high" ? "error" : "warning"}
+                sx={{ mb: 1.5 }}
+              >
+                <AlertTitle>
+                  {anomaly.type?.replace(/_/g, " ").toUpperCase()}
+                </AlertTitle>
+                {anomaly.description}
+              </Alert>
+            ))}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+});
+
+RiskAssessment.displayName = "RiskAssessment";
+
+const InsightsPanel = React.memo(({ metrics }) => (
+  <Grid container spacing={3}>
+    <Grid item xs={12} md={6}>
+      <Card sx={{ borderRadius: 3, boxShadow: 2, height: "100%" }}>
+        <CardContent>
+          <Typography variant="h6" fontWeight="bold" gutterBottom>
+            Key Findings
+          </Typography>
+          <Divider sx={{ mb: 2 }} />
+          {metrics.keyFindings?.length > 0 ? (
+            <List>
+              {metrics.keyFindings.map((finding, idx) => (
+                <ListItem key={idx} disablePadding sx={{ mb: 1.5 }}>
+                  <ListItemAvatar>
+                    <Avatar sx={{ bgcolor: "#10b981", width: 32, height: 32 }}>
+                      <CheckCircleIcon sx={{ fontSize: 18 }} />
+                    </Avatar>
+                  </ListItemAvatar>
+                  <ListItemText
+                    primary={finding}
+                    primaryTypographyProps={{ variant: "body2" }}
+                  />
+                </ListItem>
+              ))}
+            </List>
+          ) : (
+            <Typography variant="body2" color="textSecondary">
+              No specific findings available
+            </Typography>
+          )}
+        </CardContent>
+      </Card>
+    </Grid>
+
+    <Grid item xs={12} md={6}>
+      <Card sx={{ borderRadius: 3, boxShadow: 2, height: "100%" }}>
+        <CardContent>
+          <Typography variant="h6" fontWeight="bold" gutterBottom>
+            Recommendations
+          </Typography>
+          <Divider sx={{ mb: 2 }} />
+          {metrics.recommendations?.length > 0 ? (
+            <List>
+              {metrics.recommendations.map((rec, idx) => (
+                <ListItem key={idx} disablePadding sx={{ mb: 1.5 }}>
+                  <ListItemAvatar>
+                    <Avatar sx={{ bgcolor: "#6366f1", width: 32, height: 32 }}>
+                      {idx + 1}
+                    </Avatar>
+                  </ListItemAvatar>
+                  <ListItemText
+                    primary={rec}
+                    primaryTypographyProps={{ variant: "body2" }}
+                  />
+                </ListItem>
+              ))}
+            </List>
+          ) : (
+            <Typography variant="body2" color="textSecondary">
+              No specific recommendations available
+            </Typography>
+          )}
+        </CardContent>
+      </Card>
+    </Grid>
+  </Grid>
+));
+
+InsightsPanel.displayName = "InsightsPanel";
 
 const FinancialDashboard = () => {
   const navigate = useNavigate();
@@ -67,14 +791,21 @@ const FinancialDashboard = () => {
   const [selectedAnalysis, setSelectedAnalysis] = useState(null);
   const [financialMetrics, setFinancialMetrics] = useState(null);
   const [error, setError] = useState("");
+  const [selectedTransactions, setSelectedTransactions] = useState([]);
+  const [showTransactions, setShowTransactions] = useState(false);
 
-  useEffect(() => {
-    if (user) {
-      loadDashboardData();
-    }
-  }, [user]);
+  const applyDocumentAnalysis = useCallback((doc, analysis) => {
+    setSelectedDocument(doc);
+    setSelectedAnalysis(analysis);
+    const metrics = calculateFinancialMetrics(doc, analysis);
+    setFinancialMetrics(metrics);
+    const txns = safeParseJSON(analysis.transactions, []);
+    setSelectedTransactions(txns);
+    setShowTransactions(false);
+  }, []);
 
-  const loadDashboardData = async () => {
+  const loadDashboardData = useCallback(async () => {
+    if (!user) return;
     setLoading(true);
     setError("");
 
@@ -83,692 +814,72 @@ const FinancialDashboard = () => {
         .where("userId")
         .equals(user.id)
         .reverse()
-        .limit(10)
+        .limit(MAX_RECENT_DOCS)
         .toArray();
 
-      if (docs.length > 0) {
-        setRecentDocuments(docs);
-        const latestDoc = docs[0];
-        const analysis = await db.analyseResult
-          .where("documentId")
-          .equals(latestDoc.id)
-          .first();
+      if (docs.length === 0) {
+        setRecentDocuments([]);
+        setFinancialMetrics(null);
+        setSelectedTransactions([]);
+        return;
+      }
 
-        if (analysis) {
-          setSelectedDocument(latestDoc);
-          setSelectedAnalysis(analysis);
-          const metrics = calculateFinancialMetrics(latestDoc, analysis);
-          setFinancialMetrics(metrics);
-        } else {
-          setFinancialMetrics(null);
-        }
+      setRecentDocuments(docs);
+
+      const latestDoc = docs[0];
+      const analysis = await db.analyseResult
+        .where("documentId")
+        .equals(latestDoc.id)
+        .first();
+
+      if (analysis) {
+        applyDocumentAnalysis(latestDoc, analysis);
       } else {
         setFinancialMetrics(null);
+        setSelectedTransactions([]);
       }
     } catch (err) {
       console.error("Failed to load dashboard data:", err);
-      setError("Failed to load dashboard data");
+      setError("Failed to load dashboard data. Please refresh the page.");
       setFinancialMetrics(null);
     } finally {
       setLoading(false);
     }
-  };
+  }, [user, applyDocumentAnalysis]);
 
-  const calculateFinancialMetrics = (document, analysis) => {
-    const extractedText = analysis.extractedText || "";
+  useEffect(() => {
+    if (user) loadDashboardData();
+  }, [user, loadDashboardData]);
 
-    let keyFindings = [];
-    let recommendations = [];
+  const handleDocumentSelect = useCallback(
+    async (doc) => {
+      try {
+        const analysis = await db.analyseResult
+          .where("documentId")
+          .equals(doc.id)
+          .first();
 
-    try {
-      if (analysis.keyFindings) {
-        keyFindings =
-          typeof analysis.keyFindings === "string"
-            ? JSON.parse(analysis.keyFindings)
-            : analysis.keyFindings;
+        if (analysis) {
+          applyDocumentAnalysis(doc, analysis);
+        } else {
+          setError("No analysis found for this document");
+        }
+      } catch (err) {
+        console.error("Failed to load document:", err);
+        setError("Failed to load document analysis");
       }
-    } catch {
-      keyFindings = [];
-    }
+    },
+    [applyDocumentAnalysis],
+  );
 
-    try {
-      if (analysis.recommendations) {
-        recommendations =
-          typeof analysis.recommendations === "string"
-            ? JSON.parse(analysis.recommendations)
-            : analysis.recommendations;
-      }
-    } catch {
-      recommendations = [];
-    }
-
-    const numbers = extractNumbers(extractedText);
-
-    let totalRevenue = 0;
-    let totalExpenses = 0;
-    let netProfit = 0;
-    let profitMargin = 0;
-
-    if (numbers.length >= 2) {
-      const sorted = numbers.sort((a, b) => b - a);
-      totalRevenue = sorted[0] || 0;
-      totalExpenses = sorted[1] || 0;
-      netProfit = totalRevenue - totalExpenses;
-      profitMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
-    }
-
-    const revenueData = generateTrendData(totalRevenue, totalExpenses);
-    const categoryData = generateCategoryData(totalExpenses);
-    const riskScore = mapRiskLevelToScore(analysis.riskLevel);
-    const anomaliesCount = countAnomaliesInText(extractedText, keyFindings);
-
-    return {
-      totalRevenue,
-      totalExpenses,
-      netProfit,
-      profitMargin,
-      riskScore,
-      severity: analysis.riskLevel || "Medium",
-      anomaliesCount,
-      currency: detectCurrency(extractedText),
-      revenueData,
-      categoryData,
-      anomalies: parseAnomalies(keyFindings),
-      keyFindings: keyFindings.map((f) =>
-        typeof f === "string" ? f : f.finding || "",
-      ),
-      recommendations: recommendations.map((r) =>
-        typeof r === "string" ? r : r.recommendation || "",
-      ),
-      sentiment: analysis.sentiment || "Neutral",
-      confidence: analysis.confidence || 0.8,
-      wordCount: analysis.wordCount || 0,
-      summary: analysis.summary || "",
-      documentType: detectDocumentType(extractedText),
-    };
-  };
-
-  const extractNumbers = (text) => {
-    if (!text) return [];
-    const matches = text.match(/\d+(?:,\d{3})*(?:\.\d{2})?/g) || [];
-    return matches
-      .map((m) => parseFloat(m.replace(/,/g, "")))
-      .filter((n) => n > 100 && n < 10000000)
-      .slice(0, 10);
-  };
-
-  const detectCurrency = (text) => {
-    if (!text) return "INR";
-    if (text.includes("₹") || text.includes("INR")) return "INR";
-    if (text.includes("$") || text.includes("USD")) return "USD";
-    if (text.includes("€") || text.includes("EUR")) return "EUR";
-    return "INR";
-  };
-
-  const mapRiskLevelToScore = (riskLevel) => {
-    const level = (riskLevel || "medium").toLowerCase();
-    if (level.includes("low")) return 25;
-    if (level.includes("medium") || level.includes("moderate")) return 50;
-    if (level.includes("high")) return 75;
-    return 50;
-  };
-
-  const countAnomaliesInText = (text, findings) => {
-    let count = 0;
-    const anomalyKeywords = [
-      "unusual",
-      "anomaly",
-      "irregular",
-      "suspicious",
-      "warning",
-      "alert",
-    ];
-    const lowerText = (text || "").toLowerCase();
-    anomalyKeywords.forEach((keyword) => {
-      if (lowerText.includes(keyword)) count++;
-    });
-    return Math.max(count, findings.length > 0 ? 1 : 0);
-  };
-
-  const parseAnomalies = (findings) => {
-    return findings
-      .filter((f) => {
-        const text = typeof f === "string" ? f : f.finding || "";
-        return (
-          text.toLowerCase().includes("unusual") ||
-          text.toLowerCase().includes("anomaly") ||
-          text.toLowerCase().includes("warning")
-        );
-      })
-      .slice(0, 3)
-      .map((f, idx) => ({
-        type: `anomaly_${idx + 1}`,
-        description: typeof f === "string" ? f : f.finding || f,
-        severity: idx === 0 ? "high" : "medium",
-      }));
-  };
-
-  const detectDocumentType = (text) => {
-    const lowerText = (text || "").toLowerCase();
-    if (
-      lowerText.includes("bank statement") ||
-      lowerText.includes("account statement")
-    )
-      return "bank_statement";
-    if (lowerText.includes("invoice")) return "invoice";
-    if (lowerText.includes("tax") || lowerText.includes("gst"))
-      return "tax_document";
-    if (lowerText.includes("receipt")) return "receipt";
-    return "financial_document";
-  };
-
-  const generateTrendData = (revenue, expenses) => {
-    const months = ["Jan", "Feb", "Mar"];
-    return months.map((month, idx) => {
-      const variance = 0.85 + idx * 0.075;
-      const r = Math.round(revenue * variance);
-      const e = Math.round(expenses * variance);
-      return {
-        month,
-        revenue: r,
-        expenses: e,
-        profit: r - e,
-      };
-    });
-  };
-
-  const generateCategoryData = (totalExpenses) => {
-    const categories = [
-      { name: "Operations", percentage: 0.4 },
-      { name: "Salaries", percentage: 0.3 },
-      { name: "Marketing", percentage: 0.15 },
-      { name: "Utilities", percentage: 0.1 },
-      { name: "Other", percentage: 0.05 },
-    ];
-
-    return categories.map((cat) => ({
-      name: cat.name,
-      value: Math.round(totalExpenses * cat.percentage),
-    }));
-  };
-
-  const formatCurrency = (amount, currency = "INR") => {
-    if (amount === null || amount === undefined) return "N/A";
-    try {
-      return new Intl.NumberFormat("en-IN", {
-        style: "currency",
-        currency: currency,
-        maximumFractionDigits: 0,
-      }).format(amount);
-    } catch (err) {
-      return `${currency} ${amount.toLocaleString()}`;
-    }
-  };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return "N/A";
-    try {
-      return new Date(dateString).toLocaleDateString("en-IN", {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      });
-    } catch (err) {
-      return dateString;
-    }
-  };
-
-  const getRiskColor = (score) => {
-    if (!score && score !== 0) return "#6b7280";
-    if (score < 30) return "#10b981";
-    if (score < 60) return "#f59e0b";
-    return "#ef4444";
-  };
-
-  const getRiskLabel = (score) => {
-    if (!score && score !== 0) return "Not Available";
-    if (score < 30) return "Low Risk";
-    if (score < 60) return "Medium Risk";
-    return "High Risk";
-  };
-
-  const getSeverityColor = (severity) => {
-    switch (severity?.toLowerCase()) {
-      case "high":
-        return "#ef4444";
-      case "medium":
-        return "#f59e0b";
-      case "low":
-        return "#10b981";
-      default:
-        return "#6b7280";
-    }
-  };
-
-  const handleDocumentSelect = async (doc) => {
-    try {
-      const analysis = await db.analyseResult
-        .where("documentId")
-        .equals(doc.id)
-        .first();
-
-      if (analysis) {
-        setSelectedDocument(doc);
-        setSelectedAnalysis(analysis);
-        const metrics = calculateFinancialMetrics(doc, analysis);
-        setFinancialMetrics(metrics);
-      }
-    } catch (err) {
-      console.error("Failed to load document:", err);
-      setError("Failed to load document analysis");
-    }
-  };
-
-  const KeyMetricsGrid = ({ metrics }) => {
-    const metricsData = [
-      {
-        title: "Total Revenue",
-        value: formatCurrency(metrics.totalRevenue, metrics.currency),
-        icon: <AttachMoneyIcon />,
-        bgColor: "#10b981",
-      },
-      {
-        title: "Net Profit",
-        value: formatCurrency(metrics.netProfit, metrics.currency),
-        icon:
-          metrics.netProfit >= 0 ? <TrendingUpIcon /> : <TrendingDownIcon />,
-        bgColor: metrics.netProfit >= 0 ? "#10b981" : "#ef4444",
-      },
-      {
-        title: "Profit Margin",
-        value: `${metrics.profitMargin.toFixed(1)}%`,
-        icon: <AssessmentIcon />,
-        bgColor: "#6366f1",
-      },
-      {
-        title: "Risk Score",
-        value: metrics.riskScore,
-        icon: <WarningIcon />,
-        bgColor: getRiskColor(metrics.riskScore),
-      },
-      {
-        title: "Sentiment",
-        value: metrics.sentiment || "Neutral",
-        icon: <TimelineIcon />,
-        bgColor: getSeverityColor(metrics.severity),
-      },
-      {
-        title: "Anomalies",
-        value: metrics.anomaliesCount,
-        icon: <WarningIcon />,
-        bgColor: "#f59e0b",
-      },
-    ];
-
-    return (
-      <Grid container spacing={isMobile ? 2 : 3} sx={{ mb: 4 }}>
-        {metricsData.map((metric, idx) => (
-          <Grid item xs={12} sm={6} md={4} key={idx}>
-            <Card
-              sx={{
-                borderRadius: 3,
-                bgcolor: metric.bgColor,
-                boxShadow: 3,
-                transition: "transform 0.2s",
-                "&:hover": {
-                  transform: "translateY(-4px)",
-                  boxShadow: 6,
-                },
-              }}
-            >
-              <CardContent>
-                <Box
-                  display="flex"
-                  justifyContent="space-between"
-                  alignItems="center"
-                >
-                  <Box>
-                    <Typography
-                      variant="body2"
-                      sx={{ color: "rgba(255,255,255,0.8)", mb: 1 }}
-                    >
-                      {metric.title}
-                    </Typography>
-                    <Typography
-                      variant="h5"
-                      fontWeight="bold"
-                      sx={{ color: "#ffffff" }}
-                    >
-                      {metric.value}
-                    </Typography>
-                  </Box>
-                  <Avatar
-                    sx={{
-                      bgcolor: "rgba(255,255,255,0.2)",
-                      width: 48,
-                      height: 48,
-                      color: "white",
-                    }}
-                  >
-                    {metric.icon}
-                  </Avatar>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-        ))}
-      </Grid>
-    );
-  };
-
-  const RevenueChart = ({ data, currency }) => {
-    if (
-      !data ||
-      data.length === 0 ||
-      (data[0].revenue === 0 && data[0].expenses === 0)
-    ) {
-      return (
-        <Card sx={{ borderRadius: 3, boxShadow: 2 }}>
-          <CardContent>
-            <Typography variant="h6" fontWeight="bold" gutterBottom>
-              Revenue & Profit Analysis
-            </Typography>
-            <Box sx={{ textAlign: "center", py: 4 }}>
-              <BarChartIcon
-                sx={{ fontSize: 60, color: "text.secondary", mb: 2 }}
-              />
-              <Typography color="textSecondary">
-                No revenue data available
-              </Typography>
-            </Box>
-          </CardContent>
-        </Card>
-      );
-    }
-
-    return (
-      <Card sx={{ borderRadius: 3, boxShadow: 2 }}>
-        <CardContent>
-          <Typography variant="h6" fontWeight="bold" gutterBottom>
-            Revenue & Profit Analysis
-          </Typography>
-          <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-            Revenue vs Expenses vs Profit Trend
-          </Typography>
-          <ResponsiveContainer width="100%" height={350}>
-            <ComposedChart data={data}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="month" />
-              <YAxis
-                yAxisId="left"
-                tickFormatter={(value) => formatCurrency(value, currency)}
-              />
-              <YAxis yAxisId="right" orientation="right" />
-              <RechartsTooltip
-                formatter={(value, name) => [
-                  formatCurrency(value, currency),
-                  name === "profit"
-                    ? "Profit"
-                    : name === "revenue"
-                      ? "Revenue"
-                      : "Expenses",
-                ]}
-              />
-              <Legend />
-              <Bar
-                yAxisId="left"
-                dataKey="revenue"
-                fill="#10b981"
-                name="Revenue"
-                barSize={40}
-                radius={[8, 8, 0, 0]}
-              />
-              <Bar
-                yAxisId="left"
-                dataKey="expenses"
-                fill="#ef4444"
-                name="Expenses"
-                barSize={40}
-                radius={[8, 8, 0, 0]}
-              />
-              <Line
-                yAxisId="right"
-                type="monotone"
-                dataKey="profit"
-                stroke="#6366f1"
-                strokeWidth={3}
-                name="Profit"
-                dot={{ fill: "#6366f1", r: 6 }}
-              />
-            </ComposedChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
-    );
-  };
-
-  const ExpenseDistribution = ({ data, currency }) => {
-    if (!data || data.length === 0 || data.every((d) => d.value === 0)) {
-      return (
-        <Card sx={{ borderRadius: 3, boxShadow: 2 }}>
-          <CardContent>
-            <Typography variant="h6" fontWeight="bold" gutterBottom>
-              Expense Distribution
-            </Typography>
-            <Box sx={{ textAlign: "center", py: 4 }}>
-              <PieChartIcon
-                sx={{ fontSize: 60, color: "text.secondary", mb: 2 }}
-              />
-              <Typography color="textSecondary">
-                No expense data available
-              </Typography>
-            </Box>
-          </CardContent>
-        </Card>
-      );
-    }
-
-    const COLORS = [
-      "#6366f1",
-      "#10b981",
-      "#f59e0b",
-      "#ef4444",
-      "#8b5cf6",
-      "#ec4899",
-    ];
-
-    return (
-      <Card sx={{ borderRadius: 3, boxShadow: 2 }}>
-        <CardContent>
-          <Typography variant="h6" fontWeight="bold" gutterBottom>
-            Expense Distribution
-          </Typography>
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie
-                data={data}
-                cx="50%"
-                cy="50%"
-                label={({ name, percent }) =>
-                  `${name} ${(percent * 100).toFixed(0)}%`
-                }
-                outerRadius={100}
-                dataKey="value"
-              >
-                {data.map((entry, index) => (
-                  <Cell
-                    key={`cell-${index}`}
-                    fill={COLORS[index % COLORS.length]}
-                  />
-                ))}
-              </Pie>
-              <RechartsTooltip
-                formatter={(value) => formatCurrency(value, currency)}
-              />
-              <Legend />
-            </PieChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
-    );
-  };
-
-  const RiskAssessment = ({ metrics }) => {
-    const riskScore = metrics.riskScore || 0;
-
-    return (
-      <Card sx={{ borderRadius: 3, boxShadow: 2 }}>
-        <CardContent>
-          <Typography variant="h6" fontWeight="bold" gutterBottom>
-            Risk Assessment
-          </Typography>
-
-          <Box sx={{ textAlign: "center", mb: 3 }}>
-            <Box sx={{ position: "relative", display: "inline-block" }}>
-              <CircularProgress
-                variant="determinate"
-                value={riskScore}
-                size={120}
-                thickness={8}
-                sx={{ color: getRiskColor(riskScore) }}
-              />
-              <Box
-                sx={{
-                  top: 0,
-                  left: 0,
-                  bottom: 0,
-                  right: 0,
-                  position: "absolute",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <Typography variant="h4" fontWeight="bold">
-                  {riskScore}
-                </Typography>
-              </Box>
-            </Box>
-            <Chip
-              label={getRiskLabel(riskScore)}
-              sx={{
-                mt: 2,
-                bgcolor: getRiskColor(riskScore),
-                color: "white",
-                fontWeight: "bold",
-              }}
-            />
-          </Box>
-
-          <LinearProgress
-            variant="determinate"
-            value={riskScore}
-            sx={{
-              height: 8,
-              borderRadius: 4,
-              mb: 2,
-              "& .MuiLinearProgress-bar": { bgcolor: getRiskColor(riskScore) },
-            }}
-          />
-
-          {metrics.anomalies && metrics.anomalies.length > 0 && (
-            <>
-              <Divider sx={{ my: 2 }} />
-              <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
-                Detected Anomalies ({metrics.anomalies.length})
-              </Typography>
-              {metrics.anomalies.map((anomaly, idx) => (
-                <Alert
-                  key={idx}
-                  severity={anomaly.severity === "high" ? "error" : "warning"}
-                  sx={{ mb: 1.5 }}
-                >
-                  <AlertTitle>
-                    {anomaly.type?.replace(/_/g, " ").toUpperCase()}
-                  </AlertTitle>
-                  {anomaly.description}
-                </Alert>
-              ))}
-            </>
-          )}
-        </CardContent>
-      </Card>
-    );
-  };
-
-  const InsightsPanel = ({ metrics }) => {
-    return (
-      <Grid container spacing={3}>
-        <Grid item xs={12} md={6}>
-          <Card sx={{ borderRadius: 3, boxShadow: 2 }}>
-            <CardContent>
-              <Typography variant="h6" fontWeight="bold" gutterBottom>
-                Key Findings
-              </Typography>
-              <Divider sx={{ mb: 2 }} />
-              {metrics.keyFindings && metrics.keyFindings.length > 0 ? (
-                <List>
-                  {metrics.keyFindings.map((finding, idx) => (
-                    <ListItem key={idx} disablePadding>
-                      <ListItemAvatar>
-                        <Avatar
-                          sx={{ bgcolor: "#10b981", width: 32, height: 32 }}
-                        >
-                          {idx + 1}
-                        </Avatar>
-                      </ListItemAvatar>
-                      <ListItemText
-                        primary={finding}
-                        primaryTypographyProps={{ variant: "body2" }}
-                      />
-                    </ListItem>
-                  ))}
-                </List>
-              ) : (
-                <Typography variant="body2" color="textSecondary">
-                  No specific findings available
-                </Typography>
-              )}
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} md={6}>
-          <Card sx={{ borderRadius: 3, boxShadow: 2 }}>
-            <CardContent>
-              <Typography variant="h6" fontWeight="bold" gutterBottom>
-                Recommendations
-              </Typography>
-              <Divider sx={{ mb: 2 }} />
-              {metrics.recommendations && metrics.recommendations.length > 0 ? (
-                <List>
-                  {metrics.recommendations.map((rec, idx) => (
-                    <ListItem key={idx} disablePadding>
-                      <ListItemAvatar>
-                        <Avatar
-                          sx={{ bgcolor: "#6366f1", width: 32, height: 32 }}
-                        >
-                          {idx + 1}
-                        </Avatar>
-                      </ListItemAvatar>
-                      <ListItemText
-                        primary={rec}
-                        primaryTypographyProps={{ variant: "body2" }}
-                      />
-                    </ListItem>
-                  ))}
-                </List>
-              ) : (
-                <Typography variant="body2" color="textSecondary">
-                  No specific recommendations available
-                </Typography>
-              )}
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-    );
-  };
+  const hasTransactionData = useMemo(
+    () =>
+      financialMetrics &&
+      (financialMetrics.totalCredit > 0 ||
+        financialMetrics.totalDebit > 0 ||
+        financialMetrics.transactions?.length > 0),
+    [financialMetrics],
+  );
 
   if (loading) {
     return (
@@ -837,7 +948,11 @@ const FinancialDashboard = () => {
         </Box>
         <Box sx={{ display: "flex", gap: 1 }}>
           <Tooltip title="Refresh Data">
-            <IconButton onClick={loadDashboardData} color="primary">
+            <IconButton
+              onClick={loadDashboardData}
+              color="primary"
+              aria-label="Refresh"
+            >
               <RefreshIcon />
             </IconButton>
           </Tooltip>
@@ -879,8 +994,8 @@ const FinancialDashboard = () => {
                   >
                     <DescriptionIcon />
                   </Avatar>
-                  <Box flex={1}>
-                    <Typography variant="h6" fontWeight="bold">
+                  <Box flex={1} minWidth={0}>
+                    <Typography variant="h6" fontWeight="bold" noWrap>
                       {selectedDocument.fileName}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
@@ -890,12 +1005,13 @@ const FinancialDashboard = () => {
                       • Analyzed on {formatDate(selectedDocument.scannedAt)}
                     </Typography>
                   </Box>
-                  <Box>
+                  <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
                     <Chip
-                      label={`Confidence: ${(financialMetrics.confidence * 100).toFixed(0)}%`}
+                      label={`Confidence: ${(
+                        financialMetrics.confidence * 100
+                      ).toFixed(0)}%`}
                       color="primary"
                       variant="outlined"
-                      sx={{ mr: 1 }}
                     />
                     <Chip
                       label={`Risk: ${financialMetrics.riskScore}`}
@@ -921,7 +1037,7 @@ const FinancialDashboard = () => {
             </Alert>
           )}
 
-          <KeyMetricsGrid metrics={financialMetrics} />
+          <KeyMetricsGrid metrics={financialMetrics} isMobile={isMobile} />
 
           <Grid container spacing={3} sx={{ mb: 3 }}>
             <Grid item xs={12} lg={6}>
@@ -938,6 +1054,83 @@ const FinancialDashboard = () => {
             </Grid>
           </Grid>
 
+          {hasTransactionData && (
+            <Card sx={{ borderRadius: 3, mb: 3, boxShadow: 2 }}>
+              <CardContent>
+                <Box
+                  display="flex"
+                  justifyContent="space-between"
+                  alignItems="center"
+                  flexWrap="wrap"
+                  mb={2}
+                >
+                  <Typography variant="h6" fontWeight="bold">
+                    Transaction Summary
+                  </Typography>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => setShowTransactions((prev) => !prev)}
+                  >
+                    {showTransactions
+                      ? "Hide Details"
+                      : "View All Transactions"}
+                  </Button>
+                </Box>
+
+                <Grid container spacing={2}>
+                  {[
+                    {
+                      label: "Total Credit",
+                      value: formatCurrency(financialMetrics.totalCredit),
+                      bg: "#10b981",
+                    },
+                    {
+                      label: "Total Debit",
+                      value: formatCurrency(financialMetrics.totalDebit),
+                      bg: "#ef4444",
+                    },
+                    {
+                      label: "Failed Transactions",
+                      value:
+                        financialMetrics.failedCount ||
+                        financialMetrics.anomaliesCount ||
+                        0,
+                      bg: "#f59e0b",
+                    },
+                  ].map((item) => (
+                    <Grid item xs={4} key={item.label}>
+                      <Paper
+                        sx={{
+                          p: 2,
+                          textAlign: "center",
+                          bgcolor: item.bg,
+                          color: "white",
+                          borderRadius: 2,
+                        }}
+                      >
+                        <Typography variant="caption">{item.label}</Typography>
+                        <Typography variant="h6" fontWeight="bold">
+                          {item.value}
+                        </Typography>
+                      </Paper>
+                    </Grid>
+                  ))}
+                </Grid>
+
+                {showTransactions && (
+                  <Box sx={{ mt: 3 }}>
+                    <TransactionTable
+                      transactions={financialMetrics.transactions || []}
+                      isMobile={isMobile}
+                      formatCurrencyFn={formatCurrency}
+                    />
+                  </Box>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           <Box sx={{ mb: 3 }}>
             <RiskAssessment metrics={financialMetrics} />
           </Box>
@@ -947,7 +1140,12 @@ const FinancialDashboard = () => {
 
         <Grid item xs={12} md={3}>
           <Card
-            sx={{ borderRadius: 3, boxShadow: 2, position: "sticky", top: 20 }}
+            sx={{
+              borderRadius: 3,
+              boxShadow: 2,
+              position: "sticky",
+              top: 20,
+            }}
           >
             <Box
               sx={{
@@ -983,7 +1181,7 @@ const FinancialDashboard = () => {
                       primary={
                         <Typography variant="body2" fontWeight="medium" noWrap>
                           {doc.fileName.length > 25
-                            ? doc.fileName.substring(0, 25) + "..."
+                            ? `${doc.fileName.substring(0, 25)}...`
                             : doc.fileName}
                         </Typography>
                       }

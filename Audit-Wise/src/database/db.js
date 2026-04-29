@@ -10,12 +10,12 @@ export const PLAN_LIMITS = {
 
 db.version(1).stores({
   users:
-    "++id, email, password, name, avatar, plan, planUpdatedAt, planExpiryDate, monthlyUploadCount, monthlyResetDate, createdAt, lastLogin, isActive, extraUploads",
+    "++id, email, password, name, fullName, phone, company, position, location, bio, avatar, securitySettings, plan, planUpdatedAt, planExpiryDate, monthlyUploadCount, monthlyResetDate, createdAt, lastLogin, isActive, extraUploads",
   auth: "id, isLoggedIn, userId, tabId, lastActive, sessionToken",
   documents:
     "++id, userId, fileName, fileSize, fileType, filePath, status, scannedAt, originalImage, scannedImage, extractedText, confidence",
   analyseResult:
-    "++id, documentId, userId, extractedText, confidence, modelUsed, processedAt, language, analysis, sentiment, riskLevel, keyFindings, recommendations, mode, wordCount, charCount, summary",
+    "++id, documentId, userId, extractedText, confidence, modelUsed, processedAt, language, analysis, sentiment, riskLevel, keyFindings, recommendations, mode, wordCount, charCount, summary, revenue, expenses, profit, profitMargin, totalCredit, totalDebit, riskScore, anomalies, failedCount, pendingCount, completedCount, transactions",
   reports:
     "++id, userId, documentId, reportName, reportType, findings, recommendations, riskScore, generatedAt, format, isShared",
   subscriptions:
@@ -23,18 +23,19 @@ db.version(1).stores({
   userSettings:
     "++id, userId, theme, notifications, language, timezone, emailAlerts, twoFactorAuth",
   auditLogs: "++id, userId, action, details, ipAddress, timestamp, documentId",
-  addOns: "++id, userId, extraUploads, purchaseDate, expiryDate, isActive",
+  addOns:
+    "++id, userId, extraUploads, purchaseDate, expiryDate, isActive, price",
 });
 
 db.version(2)
   .stores({
     users:
-      "++id, email, password, name, avatar, plan, planUpdatedAt, planExpiryDate, monthlyUploadCount, monthlyResetDate, createdAt, lastLogin, isActive, extraUploads",
+      "++id, email, password, name, fullName, phone, company, position, location, bio, avatar, securitySettings, plan, planUpdatedAt, planExpiryDate, monthlyUploadCount, monthlyResetDate, createdAt, lastLogin, isActive, extraUploads, passwordUpdatedAt, updatedAt",
     auth: "id, isLoggedIn, userId, tabId, lastActive, sessionToken",
     documents:
       "++id, userId, fileName, fileSize, fileType, filePath, status, scannedAt, originalImage, scannedImage, extractedText, confidence",
     analyseResult:
-      "++id, documentId, userId, extractedText, confidence, modelUsed, processedAt, language, analysis, sentiment, riskLevel, keyFindings, recommendations, mode, wordCount, charCount, summary",
+      "++id, documentId, userId, extractedText, confidence, modelUsed, processedAt, language, analysis, sentiment, riskLevel, keyFindings, recommendations, mode, wordCount, charCount, summary, revenue, expenses, profit, profitMargin, totalCredit, totalDebit, riskScore, anomalies, failedCount, pendingCount, completedCount, transactions",
     reports:
       "++id, userId, documentId, reportName, reportType, findings, recommendations, riskScore, generatedAt, format, isShared",
     subscriptions:
@@ -43,7 +44,8 @@ db.version(2)
       "++id, userId, theme, notifications, language, timezone, emailAlerts, twoFactorAuth",
     auditLogs:
       "++id, userId, action, details, ipAddress, timestamp, documentId",
-    addOns: "++id, userId, extraUploads, purchaseDate, expiryDate, isActive",
+    addOns:
+      "++id, userId, extraUploads, purchaseDate, expiryDate, isActive, price",
   })
   .upgrade(async (trans) => {
     const users = await trans.table("users").toArray();
@@ -57,6 +59,23 @@ db.version(2)
         await trans
           .table("users")
           .update(user.id, { planExpiryDate: expiryDate.toISOString() });
+      }
+      if (!user.fullName) {
+        await trans.table("users").update(user.id, {
+          fullName: user.name || "",
+          phone: user.phone || "",
+          company: user.company || "",
+          position: user.position || "",
+          location: user.location || "",
+          bio: user.bio || "",
+          avatar: user.avatar || null,
+          securitySettings: user.securitySettings || {
+            twoFactorAuth: false,
+            sessionTimeout: "30",
+            loginAlerts: true,
+          },
+          updatedAt: new Date().toISOString(),
+        });
       }
     }
   });
@@ -75,6 +94,19 @@ export const dbHelpers = {
       monthlyResetDate: firstDayOfMonth.toISOString(),
       extraUploads: 0,
       planExpiryDate: null,
+      fullName: userData.name || "",
+      phone: "",
+      company: "",
+      position: "",
+      location: "",
+      bio: "",
+      avatar: null,
+      securitySettings: {
+        twoFactorAuth: false,
+        sessionTimeout: "30",
+        loginAlerts: true,
+      },
+      updatedAt: now.toISOString(),
     });
     return id;
   },

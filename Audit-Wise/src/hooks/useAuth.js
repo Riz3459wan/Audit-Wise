@@ -154,6 +154,104 @@ export const useAuth = () => {
     [user],
   );
 
+  const updateUserProfile = useCallback(
+    async (profileData) => {
+      if (!user) {
+        return { success: false, error: "No user logged in" };
+      }
+
+      try {
+        await db.users.update(user.id, {
+          fullName: profileData.fullName,
+          email: profileData.email,
+          phone: profileData.phone,
+          company: profileData.company,
+          position: profileData.position,
+          location: profileData.location,
+          bio: profileData.bio,
+          avatar: profileData.avatar,
+          updatedAt: new Date().toISOString(),
+        });
+
+        const updatedUser = await db.users.get(user.id);
+        setUser(updatedUser);
+
+        const currentSession = tabSession.get();
+        if (currentSession) {
+          tabSession.set({
+            ...currentSession,
+            email: updatedUser.email,
+            name: updatedUser.fullName || updatedUser.name,
+          });
+        }
+
+        await dbHelpers.logAudit(user.id, "PROFILE_UPDATED", {
+          updatedFields: Object.keys(profileData),
+        });
+
+        return { success: true };
+      } catch (error) {
+        console.error("Failed to update profile:", error);
+        return { success: false, error: error.message };
+      }
+    },
+    [user],
+  );
+
+  const changePassword = useCallback(
+    async (currentPassword, newPassword) => {
+      if (!user) {
+        return { success: false, error: "No user logged in" };
+      }
+
+      try {
+        const dbUser = await db.users.get(user.id);
+        if (dbUser.password !== currentPassword) {
+          return { success: false, error: "Current password is incorrect" };
+        }
+
+        await db.users.update(user.id, {
+          password: newPassword,
+          passwordUpdatedAt: new Date().toISOString(),
+        });
+
+        await dbHelpers.logAudit(user.id, "PASSWORD_CHANGED", {});
+
+        return { success: true };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
+    [user],
+  );
+
+  const updateSecuritySettings = useCallback(
+    async (securitySettings) => {
+      if (!user) {
+        return { success: false, error: "No user logged in" };
+      }
+
+      try {
+        await db.users.update(user.id, {
+          securitySettings: securitySettings,
+          updatedAt: new Date().toISOString(),
+        });
+
+        const updatedUser = await db.users.get(user.id);
+        setUser(updatedUser);
+
+        await dbHelpers.logAudit(user.id, "SECURITY_SETTINGS_UPDATED", {
+          settings: securitySettings,
+        });
+
+        return { success: true };
+      } catch (error) {
+        return { success: false, error: error.message };
+      }
+    },
+    [user],
+  );
+
   return {
     user,
     loading,
@@ -162,5 +260,8 @@ export const useAuth = () => {
     isAuthenticated: !!user,
     updateUserPlan,
     addExtraUploads,
+    updateUserProfile,
+    changePassword,
+    updateSecuritySettings,
   };
 };

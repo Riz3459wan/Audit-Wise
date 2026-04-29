@@ -62,6 +62,8 @@ const Navbar = () => {
   const menuItems = [
     { text: "Dashboard", icon: <DashboardIcon />, path: "/dashboard" },
     { text: "Reports", icon: <BarChartIcon />, path: "/report" },
+    { text: "Price", icon: <AddCardIcon />, path: "/price" },
+    { text: "Uploads", icon: <UploadFileIcon />, path: "/price" },
     { text: "Settings", icon: <SettingsIcon />, path: "/setting" },
   ];
 
@@ -71,10 +73,10 @@ const Navbar = () => {
     }
   }, [debouncedSearch]);
 
-  useEffect(() => {
-    document.body.style.backgroundColor = darkMode ? "#0f172a" : "#ffffff";
-    document.body.style.color = darkMode ? "#ffffff" : "#0f172a";
-  }, [darkMode]);
+  // useEffect(() => {
+  //   document.body.style.backgroundColor = darkMode ? "#0f172a" : "#ffffff";
+  //   document.body.style.color = darkMode ? "#ffffff" : "#0f172a";
+  // }, [darkMode]);
 
   const handleMenuOpen = (event) => {
     setAnchorEl(event.currentTarget);

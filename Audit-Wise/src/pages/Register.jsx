@@ -301,7 +301,7 @@ const Register = () => {
             backgroundColor: "rgba(0,0,0,0.5)",
             zIndex: 9999,
           }}
-          onClick={() => navigate("/")}
+          onClick={() => navigate("/login")}
         >
           <Paper
             elevation={3}
