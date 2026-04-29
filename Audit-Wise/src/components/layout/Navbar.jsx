@@ -70,7 +70,7 @@ const Navbar = () => {
     { text: "Dashboard", icon: <DashboardIcon />, path: "/dashboard" },
     { text: "Reports", icon: <BarChartIcon />, path: "/report" },
     { text: "Price", icon: <AddCardIcon />, path: "/price" },
-    { text: "Uploads", icon: <UploadFileIcon />, path: "/price" },
+    { text: "Uploads", icon: <UploadFileIcon />, path: "/upload" },
     { text: "Settings", icon: <SettingsIcon />, path: "/setting" },
   ];
 
@@ -194,7 +194,8 @@ const Navbar = () => {
       src={profileData.avatar}
       sx={{ width: size, height: size, bgcolor: "#6366f1" }}
     >
-      {!profileData.avatar && (profileData.name?.charAt(0)?.toUpperCase() || "U")}
+      {!profileData.avatar &&
+        (profileData.name?.charAt(0)?.toUpperCase() || "U")}
     </Avatar>
   );
 
