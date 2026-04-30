@@ -42,59 +42,13 @@ function getHuggingFaceClient() {
   return hfClient;
 }
 
-async function callHuggingFaceAPI(text, onProgress) {
-  if (!navigator.onLine) return null;
-
-  const client = getHuggingFaceClient();
-  if (!client) return null;
-
-  const models = [
-    "cardiffnlp/twitter-roberta-base-sentiment-latest",
-    "finiteautomata/bertweet-base-sentiment-analysis",
-  ];
-
-  for (const model of models) {
-    try {
-      onProgress?.({ status: `analyzing_with_ai`, progress: 55 });
-
-      const result = await client.textClassification({
-        model: model,
-        inputs: text.substring(0, 512),
-        parameters: { truncation: true, max_length: 512 },
-      });
-
-      onProgress?.({ status: "api_success", progress: 80 });
-      return { result, model };
-    } catch (error) {
-      continue;
-    }
-  }
-  return null;
-}
-
-function parseSentimentFromAPI(apiResponse) {
-  if (!apiResponse?.result) return null;
-
-  try {
-    const results = apiResponse.result;
-    if (Array.isArray(results) && results.length > 0) {
-      const topResult = results.reduce((prev, current) =>
-        current.score > prev.score ? current : prev,
-      );
-      const label = topResult.label.toUpperCase();
-      if (label.includes("POSITIVE")) return "POSITIVE";
-      if (label.includes("NEGATIVE")) return "NEGATIVE";
-      if (label.includes("NEUTRAL")) return "NEUTRAL";
-    }
-    return null;
-  } catch (error) {
-    return null;
-  }
-}
-
 function parseAmount(str) {
   if (!str) return 0;
-  const cleaned = String(str).replace(/,/g, "").replace(/₹/g, "").trim();
+  const cleaned = String(str)
+    .toString()
+    .replace(/[£$₹,]/g, "")
+    .replace(/[^\d.-]/g, "")
+    .trim();
   const num = parseFloat(cleaned);
   return isNaN(num) ? 0 : num;
 }
@@ -102,399 +56,329 @@ function parseAmount(str) {
 function extractTransactionsFromText(text) {
   const transactions = [];
   const seen = new Set();
-  const lowerText = text.toLowerCase();
 
-  const mockDataTransactions = [
-    {
-      date: "2026-01-01",
-      id: "TXN1001",
-      description: "Opening Balance",
-      amount: 50000,
-      type: "Credit",
-    },
-    {
-      date: "2026-01-03",
-      id: "TXN1002",
-      description: "Office Supplies",
-      amount: 2500,
-      type: "Debit",
-    },
-    {
-      date: "2026-01-05",
-      id: "TXN1003",
-      description: "Client Payment",
-      amount: 15000,
-      type: "Credit",
-    },
-    {
-      date: "2026-01-08",
-      id: "TXN1004",
-      description: "Internet Bill",
-      amount: 1200,
-      type: "Debit",
-    },
-    {
-      date: "2026-01-10",
-      id: "TXN1005",
-      description: "Salary Payment",
-      amount: 20000,
-      type: "Debit",
-    },
-    {
-      date: "2026-01-12",
-      id: "TXN1006",
-      description: "Consulting Revenue",
-      amount: 30000,
-      type: "Credit",
-    },
-    {
-      date: "2026-01-15",
-      id: "TXN1007",
-      description: "Travel Expense",
-      amount: 5000,
-      type: "Debit",
-    },
-    {
-      date: "2026-01-18",
-      id: "TXN1008",
-      description: "GST Payment",
-      amount: 7000,
-      type: "Debit",
-    },
-    {
-      date: "2026-01-20",
-      id: "TXN1009",
-      description: "Client Payment",
-      amount: 25000,
-      type: "Credit",
-    },
-    {
-      date: "2026-01-25",
-      id: "TXN1010",
-      description: "Misc Expense",
-      amount: 3000,
-      type: "Debit",
-    },
-  ];
+  if (!text || typeof text !== "string") {
+    return transactions;
+  }
 
-  const realisticReportTransactions = [
-    {
-      date: "2026-04-01",
-      id: "TXN1001",
-      description: "",
-      amount: 50000,
-      type: "Credit",
-      status: "COMPLETED",
-    },
-    {
-      date: "2026-04-02",
-      id: "TXN1002",
-      description: "",
-      amount: 20000,
-      type: "Debit",
-      status: "COMPLETED",
-    },
-    {
-      date: "2026-04-03",
-      id: "TXN1003",
-      description: "",
-      amount: 15000,
-      type: "Debit",
-      status: "FAILED",
-    },
-    {
-      date: "2026-04-04",
-      id: "TXN1004",
-      description: "",
-      amount: 75000,
-      type: "Credit",
-      status: "COMPLETED",
-    },
-  ];
+  const lines = text.split(/\r?\n/);
 
-  const excelTransactions = [
-    {
-      date: "2026-01-01",
-      id: "TXN1001",
-      description: "",
-      amount: 200000,
-      type: "Credit",
-      status: "COMPLETED",
-    },
-    {
-      date: "2026-01-05",
-      id: "TXN1002",
-      description: "",
-      amount: 300000,
-      type: "Credit",
-      status: "COMPLETED",
-    },
-    {
-      date: "2026-01-10",
-      id: "TXN1003",
-      description: "",
-      amount: 120000,
-      type: "Debit",
-      status: "COMPLETED",
-    },
-    {
-      date: "2026-01-15",
-      id: "TXN1004",
-      description: "",
-      amount: 200000,
-      type: "Debit",
-      status: "COMPLETED",
-    },
-  ];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
 
-  const imageTransactions = [
-    {
-      date: "2026-01-01",
-      id: "TXN1001",
-      description: "",
-      amount: 200000,
-      type: "Credit",
-      status: "COMPLETED",
-    },
-    {
-      date: "2026-01-01",
-      id: "TXN1002",
-      description: "",
-      amount: 300000,
-      type: "Credit",
-      status: "COMPLETED",
-    },
-    {
-      date: "2026-01-11",
-      id: "TXN1003",
-      description: "",
-      amount: 120000,
-      type: "Debit",
-      status: "COMPLETED",
-    },
-    {
-      date: "2026-01-11",
-      id: "TXN1004",
-      description: "",
-      amount: 200000,
-      type: "Debit",
-      status: "COMPLETED",
-    },
-  ];
+    const transactionPattern =
+      /(TXN\d+)\s+(Credit|Debit)\s+([\d,]+)\s+(Completed|Failed|Pending)/i;
+    let match = transactionPattern.exec(line);
 
-  if (
-    lowerText.includes("mock_financial_data") ||
-    (lowerText.includes("opening balance") &&
-      lowerText.includes("office supplies"))
-  ) {
-    for (const txn of mockDataTransactions) {
-      const key = `${txn.date}-${txn.id}-${txn.amount}`;
-      if (!seen.has(key)) {
+    if (match) {
+      const id = match[1];
+      const type = match[2];
+      const amount = parseAmount(match[3]);
+      const status = match[4].toUpperCase();
+
+      let date = new Date().toISOString().split("T")[0];
+      for (
+        let j = Math.max(0, i - 5);
+        j <= Math.min(lines.length - 1, i + 5);
+        j++
+      ) {
+        const dateMatch = lines[j].match(/(\d{4}-\d{2}-\d{2})/);
+        if (dateMatch) {
+          date = dateMatch[1];
+          break;
+        }
+      }
+
+      const key = `${date}_${id}_${amount}`;
+      if (!seen.has(key) && amount > 0) {
         seen.add(key);
         transactions.push({
-          date: txn.date,
-          id: txn.id,
-          type: txn.type,
-          amount: txn.amount,
+          date: date,
+          id: id,
+          type: type,
+          amount: amount,
+          status: status,
+          description: "",
+        });
+      }
+      continue;
+    }
+
+    const simplePattern =
+      /(Credit|Debit)\s+([\d,]+)\s+(Completed|Failed|Pending)?/i;
+    match = simplePattern.exec(line);
+
+    if (match && !line.match(/TXN\d+/i)) {
+      const type = match[1];
+      const amount = parseAmount(match[2]);
+      const status = match[3] ? match[3].toUpperCase() : "COMPLETED";
+
+      let date = new Date().toISOString().split("T")[0];
+      for (
+        let j = Math.max(0, i - 5);
+        j <= Math.min(lines.length - 1, i + 5);
+        j++
+      ) {
+        const dateMatch = lines[j].match(/(\d{4}-\d{2}-\d{2})/);
+        if (dateMatch) {
+          date = dateMatch[1];
+          break;
+        }
+      }
+
+      const key = `${date}_${type}_${amount}`;
+      if (!seen.has(key) && amount > 0 && amount < 1000000000) {
+        seen.add(key);
+        transactions.push({
+          date: date,
+          id: `TXN${transactions.length + 1}`,
+          type: type,
+          amount: amount,
+          status: status,
+          description: "",
+        });
+      }
+    }
+  }
+
+  let revenueFromSummary = 0;
+  let expensesFromSummary = 0;
+
+  for (const line of lines) {
+    const revenueMatch = line.match(/Revenue:?\s*[£$₹]?\s*([\d,]+)/i);
+    if (revenueMatch) {
+      revenueFromSummary = parseAmount(revenueMatch[1]);
+      const key = `summary_revenue_${revenueFromSummary}`;
+      if (!seen.has(key) && revenueFromSummary > 0) {
+        seen.add(key);
+        transactions.push({
+          date: new Date().toISOString().split("T")[0],
+          id: `REV_SUMMARY`,
+          type: "Credit",
+          amount: revenueFromSummary,
           status: "COMPLETED",
-          description: txn.description,
+          description: "Revenue from financial summary",
         });
       }
     }
-  } else if (
-    lowerText.includes("realistic_audit_report") ||
-    (lowerText.includes("financial summary") &&
-      lowerText.includes("system logs"))
-  ) {
-    for (const txn of realisticReportTransactions) {
-      const key = `${txn.date}-${txn.id}-${txn.amount}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        transactions.push({
-          date: txn.date,
-          id: txn.id,
-          type: txn.type,
-          amount: txn.amount,
-          status: txn.status,
-          description: txn.description,
-        });
-      }
-    }
-  } else if (
-    lowerText.includes("financial_data.xlsx") ||
-    (lowerText.includes("200000") &&
-      lowerText.includes("300000") &&
-      lowerText.includes("120000"))
-  ) {
-    for (const txn of excelTransactions) {
-      const key = `${txn.date}-${txn.id}-${txn.amount}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        transactions.push({
-          date: txn.date,
-          id: txn.id,
-          type: txn.type,
-          amount: txn.amount,
-          status: txn.status,
-          description: txn.description,
-        });
-      }
-    }
-  } else if (
-    lowerText.includes("whatsapp image") ||
-    (lowerText.includes("200000") &&
-      lowerText.includes("completed") &&
-      lowerText.includes("credit"))
-  ) {
-    for (const txn of imageTransactions) {
-      const key = `${txn.date}-${txn.id}-${txn.amount}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        transactions.push({
-          date: txn.date,
-          id: txn.id,
-          type: txn.type,
-          amount: txn.amount,
-          status: txn.status,
-          description: txn.description,
-        });
-      }
-    }
-  } else {
-    const lines = text.split(/\r?\n/);
-    const patterns = [
-      /(\d{4}-\d{2}-\d{2})\s+(TXN\d{4})\s+(Credit|Debit)\s+([\d,]+)\s+(Completed|Failed|Pending)/gi,
-      /(\d{4}-\d{2}-\d{2})\s+(TXN\d{4})\s+(Credit|Debit)\s+([\d,]+)/gi,
-      /TXN\d{4}\s+(Credit|Debit)\s+([\d,]+)/gi,
-    ];
 
-    for (const pattern of patterns) {
-      let match;
-      const regex = new RegExp(pattern.source, pattern.flags);
-      while ((match = regex.exec(text)) !== null) {
-        let date = match[1] || "2026-01-01";
-        let id = match[2] || "";
-        let type = "";
-        let amount = 0;
-        let status = "COMPLETED";
+    const expensesMatch = line.match(/Expenses?:?\s*[£$₹]?\s*([\d,]+)/i);
+    if (expensesMatch) {
+      expensesFromSummary = parseAmount(expensesMatch[1]);
+      const key = `summary_expenses_${expensesFromSummary}`;
+      if (!seen.has(key) && expensesFromSummary > 0) {
+        seen.add(key);
+        transactions.push({
+          date: new Date().toISOString().split("T")[0],
+          id: `EXP_SUMMARY`,
+          type: "Debit",
+          amount: expensesFromSummary,
+          status: "COMPLETED",
+          description: "Expenses from financial summary",
+        });
+      }
+    }
+  }
 
-        if (match[3] && (match[3] === "Credit" || match[3] === "Debit")) {
-          type = match[3];
-          amount = parseAmount(match[4]);
-          status = match[5] || "COMPLETED";
-        } else if (
-          match[1] &&
-          (match[1] === "Credit" || match[1] === "Debit")
-        ) {
-          type = match[1];
-          amount = parseAmount(match[2]);
+  let headers = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    if (
+      line.match(/Date.*Transaction.*Type.*Amount.*Status/i) ||
+      line.match(/Date.*Transaction.*Debit.*Credit/i) ||
+      line.match(/Date.*Debit.*Credit.*Balance/i) ||
+      line.match(/Date\s+Transaction ID\s+Type\s+Amount/i)
+    ) {
+      headers = line.split(/[,\t|]{1,}/).map((h) => h.trim().toLowerCase());
+      continue;
+    }
+
+    if (line.match(/^\d{4}-\d{2}-\d{2}/)) {
+      const parts = line.split(/[,\t|]{1,}/).map((p) => p.trim());
+      let date = parts[0] || null;
+      let id = null;
+      let type = null;
+      let amount = 0;
+      let status = "COMPLETED";
+      let description = "";
+
+      for (let j = 1; j < parts.length; j++) {
+        const value = parts[j];
+        if (!value || value === "") continue;
+
+        if (value.match(/^TXN\d+/i)) {
+          id = value;
+        } else if (value.match(/^Credit$/i)) {
+          type = "Credit";
+        } else if (value.match(/^Debit$/i)) {
+          type = "Debit";
+        } else if (value.match(/^[\d,]+(?:\.\d{2})?$/)) {
+          amount = parseAmount(value);
+        } else if (value.match(/^Completed$|^Failed$|^Pending$/i)) {
+          status = value.toUpperCase();
+        } else if (value.length > 2 && !value.match(/^\d/)) {
+          description = value;
         }
+      }
 
-        if (type && amount > 0) {
-          const key = `${date}-${id}-${amount}`;
-          if (!seen.has(key)) {
-            seen.add(key);
-            transactions.push({
-              date,
-              id: id || `TXN${transactions.length + 1}`,
-              type,
-              amount,
-              status: status.toUpperCase(),
-              description: "",
-            });
+      if (headers.length > 0 && !type) {
+        for (let j = 1; j < parts.length && j < headers.length; j++) {
+          const header = headers[j];
+          const value = parts[j];
+
+          if (header.includes("type")) {
+            if (value.match(/credit/i)) type = "Credit";
+            else if (value.match(/debit/i)) type = "Debit";
+          } else if (header.includes("amount")) {
+            amount = parseAmount(value);
+          } else if (header.includes("status")) {
+            status = value.toUpperCase();
+          } else if (header.includes("id") || header.includes("txn")) {
+            id = value;
+          } else if (header.includes("description")) {
+            description = value;
           }
         }
       }
-    }
 
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-
-      const parts = trimmed.split(/\s+/);
-
-      if (parts.length >= 4 && /^\d{4}-\d{2}-\d{2}$/.test(parts[0])) {
-        const date = parts[0];
-        let id = "";
-        let amount = 0;
-        let type = "Unknown";
-        let description = "";
-
-        for (let i = 1; i < parts.length; i++) {
-          if (parts[i].startsWith("TXN")) {
-            id = parts[i];
-          }
+      if (date && amount > 0 && type) {
+        const key = `${date}_${id || type}_${amount}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          transactions.push({
+            date: date,
+            id: id || `TXN${transactions.length + 1}`,
+            type: type,
+            amount: amount,
+            status: status,
+            description: description,
+          });
         }
-
-        let numbers = [];
-        for (let i = 0; i < parts.length; i++) {
-          const num = parseAmount(parts[i]);
-          if (num > 0 && parts[i].length >= 3) {
-            numbers.push({ index: i, value: num });
-          }
-        }
-
-        if (numbers.length >= 1) {
-          amount = numbers[0].value;
-
-          const descParts = parts.slice(2, numbers[0].index);
-          description = descParts.join(" ");
-          const descLower = description.toLowerCase();
-
+      } else if (date && amount > 0 && !type) {
+        const key = `${date}_amount_${amount}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          let inferredType = "Credit";
           if (
-            descLower.includes("opening") ||
-            descLower.includes("client") ||
-            descLower.includes("revenue") ||
-            descLower.includes("consulting") ||
-            descLower.includes("payment")
+            description.toLowerCase().includes("debit") ||
+            description.toLowerCase().includes("purchase") ||
+            description.toLowerCase().includes("supplies")
           ) {
-            type = "Credit";
-          } else if (
-            descLower.includes("supplies") ||
-            descLower.includes("bill") ||
-            descLower.includes("salary") ||
-            descLower.includes("travel") ||
-            descLower.includes("expense") ||
-            descLower.includes("tax") ||
-            descLower.includes("misc") ||
-            descLower.includes("office") ||
-            descLower.includes("internet") ||
-            descLower.includes("gst")
-          ) {
-            type = "Debit";
-          } else if (numbers.length >= 2) {
-            const nextAmount = numbers[1].value;
-            if (nextAmount > amount) {
-              type = "Credit";
-            } else if (nextAmount < amount) {
-              type = "Debit";
-            } else {
-              type = "Credit";
-            }
-          } else {
-            type = "Credit";
+            inferredType = "Debit";
           }
-
-          if (id && amount > 0 && type !== "Unknown") {
-            const key = `${date}-${id}-${amount}`;
-            if (!seen.has(key)) {
-              seen.add(key);
-              transactions.push({
-                date,
-                id,
-                type,
-                amount,
-                status: "COMPLETED",
-                description: description.substring(0, 100),
-              });
-            }
-          }
+          transactions.push({
+            date: date,
+            id: id || `TXN${transactions.length + 1}`,
+            type: inferredType,
+            amount: amount,
+            status: status,
+            description: description,
+          });
         }
       }
     }
   }
 
-  return transactions;
+  const tablePattern =
+    /\|\s*(\d{4}-\d{2}-\d{2})\s*\|\s*(TXN\d+)\s*\|\s*(Credit|Debit)\s*\|\s*([\d,]+)\s*\|\s*(Completed|Failed|Pending)\s*\|/gi;
+  let tableMatch;
+  while ((tableMatch = tablePattern.exec(text)) !== null) {
+    const date = tableMatch[1];
+    const id = tableMatch[2];
+    const type = tableMatch[3];
+    const amount = parseAmount(tableMatch[4]);
+    const status = tableMatch[5].toUpperCase();
+
+    const key = `${date}_${id}_${amount}`;
+    if (!seen.has(key) && amount > 0 && amount < 1000000000) {
+      seen.add(key);
+      transactions.push({
+        date: date,
+        id: id,
+        type: type,
+        amount: amount,
+        status: status,
+        description: "",
+      });
+    }
+  }
+
+  const inlinePattern =
+    /(TXN\d+).*?(Credit|Debit).*?([\d,]+).*?(Completed|Failed|Pending)/gi;
+  let inlineMatch;
+  while ((inlineMatch = inlinePattern.exec(text)) !== null) {
+    const id = inlineMatch[1];
+    const type = inlineMatch[2];
+    const amount = parseAmount(inlineMatch[3]);
+    const status = inlineMatch[4].toUpperCase();
+
+    let date = new Date().toISOString().split("T")[0];
+    const contextStart = Math.max(0, inlineMatch.index - 100);
+    const contextEnd = Math.min(text.length, inlineMatch.index + 100);
+    const context = text.substring(contextStart, contextEnd);
+    const dateMatch = context.match(/(\d{4}-\d{2}-\d{2})/);
+    if (dateMatch) {
+      date = dateMatch[1];
+    }
+
+    const key = `${date}_${id}_${amount}`;
+    if (!seen.has(key) && amount > 0) {
+      seen.add(key);
+      transactions.push({
+        date: date,
+        id: id,
+        type: type,
+        amount: amount,
+        status: status,
+        description: "",
+      });
+    }
+  }
+
+  const numberPattern = /(Credit|Debit)\s+([\d,]+)/gi;
+  let numberMatch;
+  while ((numberMatch = numberPattern.exec(text)) !== null) {
+    const type = numberMatch[1];
+    const amount = parseAmount(numberMatch[2]);
+
+    if (amount > 0 && amount < 1000000000 && !seen.has(`${type}_${amount}`)) {
+      let date = new Date().toISOString().split("T")[0];
+      const contextStart = Math.max(0, numberMatch.index - 200);
+      const contextEnd = Math.min(text.length, numberMatch.index + 200);
+      const context = text.substring(contextStart, contextEnd);
+      const dateMatch = context.match(/(\d{4}-\d{2}-\d{2})/);
+      if (dateMatch) {
+        date = dateMatch[1];
+      }
+
+      const key = `${date}_${type}_${amount}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        transactions.push({
+          date: date,
+          id: `TXN${transactions.length + 1}`,
+          type: type,
+          amount: amount,
+          status: "COMPLETED",
+          description: "",
+        });
+      }
+    }
+  }
+
+  const uniqueTransactions = [];
+  const uniqueKeys = new Set();
+  for (const t of transactions) {
+    const key = `${t.date}_${t.type}_${t.amount}`;
+    if (!uniqueKeys.has(key)) {
+      uniqueKeys.add(key);
+      uniqueTransactions.push(t);
+    }
+  }
+
+  return uniqueTransactions;
 }
 
 function calculateTransactionStats(transactions) {
@@ -558,7 +442,7 @@ function calculateRisk(text, data) {
 
   if (data.failedCount > 0) riskScore += RISK_WEIGHTS.FAILED_TXN;
   if (data.profit < 0) riskScore += RISK_WEIGHTS.NEGATIVE_PROFIT;
-  if (data.totalDebit > data.totalCredit * 1.2)
+  if (data.totalDebit > data.totalCredit * 1.2 && data.totalCredit > 0)
     riskScore += RISK_WEIGHTS.HIGH_DEBIT;
 
   riskScore = Math.min(100, Math.max(0, riskScore));
@@ -585,6 +469,8 @@ function generateKeyFindings(text, data) {
 
   if (data.transactions.length > 0) {
     findings.push(`Total ${data.transactions.length} transactions analyzed`);
+  } else {
+    findings.push(`No transactions found in document`);
   }
 
   if (data.totalCredit > 0) {
@@ -700,6 +586,8 @@ function generateSummary(text, data, riskLevel, sentiment) {
     parts.push(
       `Analysis of ${data.transactions.length} financial transactions shows`,
     );
+  } else {
+    parts.push(`No transactions found in the document.`);
   }
 
   if (data.totalCredit > 0 || data.totalDebit > 0) {
@@ -753,6 +641,56 @@ function calculateConfidence(data, hasApiResult = false) {
   return Math.min(0.98, Math.max(0.65, confidence));
 }
 
+async function callHuggingFaceAPI(text, onProgress) {
+  if (!navigator.onLine) return null;
+
+  const client = getHuggingFaceClient();
+  if (!client) return null;
+
+  const models = [
+    "cardiffnlp/twitter-roberta-base-sentiment-latest",
+    "finiteautomata/bertweet-base-sentiment-analysis",
+  ];
+
+  for (const model of models) {
+    try {
+      onProgress?.({ status: `analyzing_with_ai`, progress: 55 });
+
+      const result = await client.textClassification({
+        model: model,
+        inputs: text.substring(0, 512),
+        parameters: { truncation: true, max_length: 512 },
+      });
+
+      onProgress?.({ status: "api_success", progress: 80 });
+      return { result, model };
+    } catch (error) {
+      continue;
+    }
+  }
+  return null;
+}
+
+function parseSentimentFromAPI(apiResponse) {
+  if (!apiResponse?.result) return null;
+
+  try {
+    const results = apiResponse.result;
+    if (Array.isArray(results) && results.length > 0) {
+      const topResult = results.reduce((prev, current) =>
+        current.score > prev.score ? current : prev,
+      );
+      const label = topResult.label.toUpperCase();
+      if (label.includes("POSITIVE")) return "POSITIVE";
+      if (label.includes("NEGATIVE")) return "NEGATIVE";
+      if (label.includes("NEUTRAL")) return "NEUTRAL";
+    }
+    return null;
+  } catch (error) {
+    return null;
+  }
+}
+
 export async function runAuditAnalysis(text, onProgress) {
   if (!text?.trim()) {
     return {
@@ -786,7 +724,7 @@ export async function runAuditAnalysis(text, onProgress) {
   let apiSentiment = null;
   let mode = "local_analysis";
 
-  if (navigator.onLine) {
+  if (navigator.onLine && auditData.transactions.length > 0) {
     try {
       const apiResponse = await callHuggingFaceAPI(text, onProgress);
       if (apiResponse?.result) {
@@ -795,9 +733,7 @@ export async function runAuditAnalysis(text, onProgress) {
           mode = "cloud_ai";
         }
       }
-    } catch (error) {
-      // Silent fallback to local analysis
-    }
+    } catch (error) {}
   }
 
   const risk = calculateRisk(text, auditData);
@@ -940,10 +876,11 @@ export const ocrService = {
       const arrayBuffer = await file.arrayBuffer();
       const workbook = XLSX.read(arrayBuffer, { type: "array" });
       let fullText = "";
+
       for (const sheetName of workbook.SheetNames) {
         const worksheet = workbook.Sheets[sheetName];
-        const sheetText = XLSX.utils.sheet_to_txt(worksheet);
-        fullText += `\n--- Sheet: ${sheetName} ---\n${sheetText}\n`;
+        const csv = XLSX.utils.sheet_to_csv(worksheet);
+        fullText += `\n--- Sheet: ${sheetName} ---\n${csv}\n`;
         onProgress?.({
           status: `processing_sheet`,
           progress:
@@ -955,6 +892,7 @@ export const ocrService = {
             ),
         });
       }
+
       onProgress?.({ status: "complete", progress: 100 });
       return {
         success: true,
@@ -963,6 +901,7 @@ export const ocrService = {
           `Excel File: ${file.name}\nNo data found in spreadsheet.`,
       };
     } catch (error) {
+      console.error("Excel extraction error:", error);
       return {
         success: true,
         text: `Excel File: ${file.name}\nUploaded successfully for audit processing.`,
@@ -982,6 +921,7 @@ export const ocrService = {
           `Image Document: ${file.name}\nImage uploaded for audit review.`,
       };
     } catch (error) {
+      console.error("Image extraction error:", error);
       return {
         success: true,
         text: `Image: ${file.name}\nUploaded for audit processing.`,

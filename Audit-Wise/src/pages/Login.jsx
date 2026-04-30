@@ -23,8 +23,8 @@ const Login = () => {
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
+    const pendingData = sessionStorage.getItem("pendingTrialData");
     if (isAuthenticated && !authLoading) {
-      const pendingData = sessionStorage.getItem("pendingTrialData");
       if (pendingData) {
         sessionStorage.removeItem("pendingTrialData");
         navigate("/trial-upload", {
@@ -71,7 +71,8 @@ const Login = () => {
       const result = await login(form.email, form.password);
 
       if (result.success) {
-        if (result.hasPendingTrialData) {
+        const pendingData = sessionStorage.getItem("pendingTrialData");
+        if (pendingData || result.hasPendingTrialData) {
           navigate("/trial-upload");
         } else {
           navigate("/dashboard", { replace: true });

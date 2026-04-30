@@ -74,7 +74,7 @@ const Register = () => {
     try {
       const existingUser = await db.users
         .where("email")
-        .equals(form.email)
+        .equals(form.email.toLowerCase())
         .first();
 
       if (existingUser) {
@@ -83,15 +83,32 @@ const Register = () => {
         return;
       }
 
+      const now = new Date();
+      const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
       await db.users.add({
         name: form.name.trim(),
         email: form.email.toLowerCase(),
         password: form.password,
         plan: "free",
-        createdAt: new Date().toISOString(),
+        createdAt: now.toISOString(),
         isActive: true,
         monthlyUploadCount: 0,
-        monthlyResetDate: new Date().toISOString(),
+        monthlyResetDate: firstDayOfMonth.toISOString(),
+        extraUploads: 0,
+        fullName: form.name.trim(),
+        phone: "",
+        company: "",
+        position: "",
+        location: "",
+        bio: "",
+        avatar: null,
+        securitySettings: {
+          twoFactorAuth: false,
+          sessionTimeout: "30",
+          loginAlerts: true,
+        },
+        updatedAt: now.toISOString(),
       });
 
       setOpenSuccess(true);
@@ -106,6 +123,11 @@ const Register = () => {
     if (e.key === "Enter") {
       handleRegister();
     }
+  };
+
+  const handleSuccessClose = () => {
+    setOpenSuccess(false);
+    navigate("/login");
   };
 
   return (
@@ -301,7 +323,7 @@ const Register = () => {
             backgroundColor: "rgba(0,0,0,0.5)",
             zIndex: 9999,
           }}
-          onClick={() => navigate("/login")}
+          onClick={handleSuccessClose}
         >
           <Paper
             elevation={3}
@@ -324,7 +346,7 @@ const Register = () => {
             <Button
               fullWidth
               variant="contained"
-              onClick={() => navigate("/login")}
+              onClick={handleSuccessClose}
               sx={{
                 py: 1.5,
                 background: "linear-gradient(90deg, #6366f1, #38bdf8)",

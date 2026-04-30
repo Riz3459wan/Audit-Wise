@@ -8,10 +8,11 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
 
     optimizeDeps: {
-      include: ["pdfjs-dist"],
+      include: ["pdfjs-dist", "@huggingface/inference"],
+      exclude: ["@huggingface/inference/dist/index.js"],
     },
 
-    assetsInclude: ["**/*.worker.mjs"],
+    assetsInclude: ["**/*.worker.mjs", "**/*.wasm"],
 
     build: {
       sourcemap: mode !== "production",
@@ -22,11 +23,25 @@ export default defineConfig(({ mode }) => {
             pdfjs: ["pdfjs-dist"],
             mammoth: ["mammoth"],
             recharts: ["recharts"],
-            mui: ["@mui/material", "@mui/icons-material"],
+            mui: [
+              "@mui/material",
+              "@mui/icons-material",
+              "@emotion/react",
+              "@emotion/styled",
+            ],
             react: ["react", "react-dom", "react-router-dom"],
             huggingface: ["@huggingface/inference"],
+            tesseract: ["tesseract.js"],
+            xlsx: ["xlsx"],
           },
         },
+      },
+    },
+
+    server: {
+      headers: {
+        "Cross-Origin-Opener-Policy": "same-origin",
+        "Cross-Origin-Embedder-Policy": "require-corp",
       },
     },
   };
