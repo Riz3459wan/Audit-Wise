@@ -39,6 +39,7 @@ const PaymentConfirmation = () => {
   const [paymentType, setPaymentType] = useState("");
   const [remainingTime, setRemainingTime] = useState(300);
   const [openDialog, setOpenDialog] = useState(false);
+  const [showLeaveConfirm, setShowLeaveConfirm] = useState(false);
 
   useEffect(() => {
     if (!plan) {
@@ -71,16 +72,15 @@ const PaymentConfirmation = () => {
       navigate("/price", { replace: true });
     } else {
       setOpenDialog(false);
-      window.history.pushState(null, "", window.location.pathname);
+      setShowLeaveConfirm(false);
     }
   };
 
   useEffect(() => {
     const timer = setInterval(() => {
       setRemainingTime((prevTime) => {
-        if (prevTime === 0) {
+        if (prevTime <= 1) {
           clearInterval(timer);
-          alert("Time Limit Exceeded, Redirecting to Pricing Page");
           sessionStorage.removeItem("redirectToPrice");
           navigate("/price", { replace: true });
           return 0;
@@ -101,28 +101,30 @@ const PaymentConfirmation = () => {
   }, [navigate]);
 
   useEffect(() => {
-    window.history.pushState(null, "", window.location.pathname);
-
-    const handlePopState = () => {
-      window.history.pushState(null, "", window.location.pathname);
+    const handlePopState = (event) => {
+      event.preventDefault();
       setOpenDialog(true);
+      window.history.pushState(null, "", window.location.pathname);
     };
 
     const handleBeforeUnload = (event) => {
-      sessionStorage.setItem("redirectToPrice", "true");
-      event.preventDefault();
-      event.returnValue = "";
+      if (remainingTime > 0) {
+        sessionStorage.setItem("redirectToPrice", "true");
+        event.preventDefault();
+        event.returnValue = "";
+      }
     };
 
+    window.history.pushState(null, "", window.location.pathname);
     window.addEventListener("popstate", handlePopState);
     window.addEventListener("beforeunload", handleBeforeUnload);
 
     return () => {
-      sessionStorage.removeItem("redirectToPrice");
       window.removeEventListener("popstate", handlePopState);
       window.removeEventListener("beforeunload", handleBeforeUnload);
+      sessionStorage.removeItem("redirectToPrice");
     };
-  }, []);
+  }, [remainingTime]);
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);

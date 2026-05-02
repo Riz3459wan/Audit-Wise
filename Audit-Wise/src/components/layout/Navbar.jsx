@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
   AppBar,
   Toolbar,
@@ -62,6 +62,7 @@ const Navbar = () => {
     avatar: null,
     plan: "Free",
   });
+  const [searchResults, setSearchResults] = useState([]);
 
   const debouncedSearch = useDebounce(searchQuery, 500);
   const open = Boolean(anchorEl);
@@ -75,15 +76,29 @@ const Navbar = () => {
   ];
 
   useEffect(() => {
-    if (debouncedSearch) {
-      console.log("Searching for:", debouncedSearch);
-    }
-  }, [debouncedSearch]);
-
-  // useEffect(() => {
-  //   document.body.style.backgroundColor = darkMode ? "#0f172a" : "#ffffff";
-  //   document.body.style.color = darkMode ? "#ffffff" : "#0f172a";
-  // }, [darkMode]);
+    const performSearch = async () => {
+      if (debouncedSearch && debouncedSearch.trim().length > 0 && user) {
+        try {
+          const docs = await db.documents
+            .where("userId")
+            .equals(user.id)
+            .filter((doc) =>
+              doc.fileName
+                .toLowerCase()
+                .includes(debouncedSearch.toLowerCase()),
+            )
+            .limit(5)
+            .toArray();
+          setSearchResults(docs);
+        } catch (error) {
+          setSearchResults([]);
+        }
+      } else {
+        setSearchResults([]);
+      }
+    };
+    performSearch();
+  }, [debouncedSearch, user]);
 
   useEffect(() => {
     loadUserProfile();
@@ -122,7 +137,6 @@ const Navbar = () => {
         });
       }
     } catch (error) {
-      console.error("Failed to load user profile:", error);
       setProfileData({
         name: user?.name || "User Name",
         email: user?.email || "user@gmail.com",
@@ -153,8 +167,10 @@ const Navbar = () => {
     navigate("/setting");
   };
 
-  const handleSearch = (value) => {
-    setSearchQuery(value);
+  const handleSearchResultClick = (doc) => {
+    navigate("/dashboard");
+    setSearchQuery("");
+    setSearchResults([]);
   };
 
   const handleLogoutClick = () => {
@@ -351,23 +367,57 @@ const Navbar = () => {
 
           <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
             {!isMobile && (
-              <Box
-                sx={{
-                  display: "flex",
-                  alignItems: "center",
-                  backgroundColor: darkMode ? "#1e293b" : "#f1f5f9",
-                  padding: "5px 10px",
-                  borderRadius: "10px",
-                  width: "250px",
-                }}
-              >
-                <SearchIcon sx={{ color: "#94a3b8" }} />
-                <InputBase
-                  placeholder="Search..."
-                  sx={{ ml: 1, flex: 1 }}
-                  value={searchQuery}
-                  onChange={(e) => handleSearch(e.target.value)}
-                />
+              <Box sx={{ position: "relative" }}>
+                <Box
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    backgroundColor: darkMode ? "#1e293b" : "#f1f5f9",
+                    padding: "5px 10px",
+                    borderRadius: "10px",
+                    width: "250px",
+                  }}
+                >
+                  <SearchIcon sx={{ color: "#94a3b8" }} />
+                  <InputBase
+                    placeholder="Search documents..."
+                    sx={{ ml: 1, flex: 1 }}
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </Box>
+                {searchResults.length > 0 && searchQuery && (
+                  <Box
+                    sx={{
+                      position: "absolute",
+                      top: "100%",
+                      left: 0,
+                      right: 0,
+                      bgcolor: "background.paper",
+                      boxShadow: 3,
+                      borderRadius: 1,
+                      zIndex: 1000,
+                      maxHeight: 300,
+                      overflow: "auto",
+                    }}
+                  >
+                    {searchResults.map((result) => (
+                      <MenuItem
+                        key={result.id}
+                        onClick={() => handleSearchResultClick(result)}
+                      >
+                        <Box>
+                          <Typography variant="body2">
+                            {result.fileName}
+                          </Typography>
+                          <Typography variant="caption" color="textSecondary">
+                            {new Date(result.scannedAt).toLocaleDateString()}
+                          </Typography>
+                        </Box>
+                      </MenuItem>
+                    ))}
+                  </Box>
+                )}
               </Box>
             )}
 

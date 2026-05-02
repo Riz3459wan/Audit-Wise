@@ -8,7 +8,7 @@ import {
   CircularProgress,
 } from "@mui/material";
 import PricingCard from "../components/PricingCard";
-import { db, PLAN_LIMITS } from "../database/db";
+import { dbHelpers, PLAN_LIMITS } from "../database/db";
 import { useAuth } from "../hooks/useAuth";
 
 const Pricing = () => {
@@ -17,8 +17,14 @@ const Pricing = () => {
   const { user } = useAuth();
 
   const [selectedPlanForPayment, setSelectedPlanForPayment] = useState(null);
-  const [currentUsage, setCurrentUsage] = useState(0);
-  const [limit, setLimit] = useState(5);
+  const [monthlyUsage, setMonthlyUsage] = useState({
+    used: 0,
+    total: 5,
+    remaining: 5,
+    plan: "free",
+    baseLimit: 5,
+    extraUploads: 0,
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -72,26 +78,11 @@ const Pricing = () => {
       }
 
       try {
-        const startOfMonth = new Date();
-        startOfMonth.setDate(1);
-        startOfMonth.setHours(0, 0, 0, 0);
-
-        const monthlyUploads = await db.documents
-          .where("userId")
-          .equals(user.id)
-          .filter((doc) => new Date(doc.scannedAt) >= startOfMonth)
-          .count();
-
-        setCurrentUsage(monthlyUploads);
-
-        const userPlan = user?.plan || "free";
-        const plan = pricingPlans.find(
-          (p) => p.planType.toLowerCase() === userPlan.toLowerCase(),
-        );
-        const extraUploads = user?.extraUploads || 0;
-        setLimit((plan?.maxUploads || 5) + extraUploads);
+        const usage = await dbHelpers.getUserMonthlyUsage(user.id);
+        setMonthlyUsage(usage);
         setError(null);
       } catch (err) {
+        console.error("Failed to load usage:", err);
         setError("Failed to load usage data");
       } finally {
         setLoading(false);
@@ -102,7 +93,10 @@ const Pricing = () => {
   }, [user]);
 
   const currentPlan = user?.plan || "free";
-  const remainingAttempts = Math.max(0, limit - currentUsage);
+  const remainingAttempts = monthlyUsage.remaining;
+  const usedAttempts = monthlyUsage.used;
+  const totalLimit = monthlyUsage.total;
+  const extraUploads = monthlyUsage.extraUploads;
 
   if (loading) {
     return (
@@ -135,25 +129,49 @@ const Pricing = () => {
           </Alert>
         )}
 
+        {extraUploads > 0 && (
+          <Alert severity="info" sx={{ mb: 2, maxWidth: 600, mx: "auto" }}>
+            You have {extraUploads} extra upload{extraUploads === 1 ? "" : "s"}{" "}
+            purchased!
+          </Alert>
+        )}
+
         {remainingAttempts <= 3 && remainingAttempts > 0 && (
           <Alert severity="warning" sx={{ mb: 2, maxWidth: 600, mx: "auto" }}>
-            You have only {remainingAttempts} uploads left on your {currentPlan}{" "}
-            plan!
+            You have only {remainingAttempts} upload
+            {remainingAttempts === 1 ? "" : "s"} left on your {currentPlan} plan
+            this month!
           </Alert>
         )}
 
         {remainingAttempts === 0 && (
           <Alert severity="error" sx={{ mb: 2, maxWidth: 600, mx: "auto" }}>
-            You have reached your {currentPlan} plan limit. Please upgrade to
-            continue uploading.
+            You have reached your {currentPlan} plan limit for this month.
+            Please upgrade to continue uploading.
           </Alert>
         )}
 
         <Typography variant="h4" sx={{ fontWeight: 800, mb: 2 }}>
-          You have {remainingAttempts} uploads left on your {currentPlan} plan
+          You have used {usedAttempts} out of {totalLimit} upload
+          {totalLimit === 1 ? "" : "s"} this month
         </Typography>
 
-        <Typography variant="h6" color="text.secondary">
+        <Typography variant="h5" sx={{ mb: 1 }}>
+          {remainingAttempts} upload{remainingAttempts === 1 ? "" : "s"}{" "}
+          remaining on your {currentPlan} plan
+        </Typography>
+
+        <Typography variant="body2" color="text.secondary">
+          {extraUploads > 0 && `${extraUploads} extra uploads included`}
+          {extraUploads === 0 &&
+            currentPlan === "free" &&
+            "Upgrade to Pro or Business for more uploads"}
+          {extraUploads === 0 &&
+            currentPlan !== "free" &&
+            "Purchase extra uploads if you need more"}
+        </Typography>
+
+        <Typography variant="h6" color="text.secondary" sx={{ mt: 2 }}>
           Upgrade to unlock more features and higher limits
         </Typography>
       </Box>

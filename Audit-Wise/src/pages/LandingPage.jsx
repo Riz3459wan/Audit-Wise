@@ -373,7 +373,7 @@ const LandingPage = () => {
               <Chip
                 label="AI-Powered Audit Platform"
                 color="primary"
-                sx={{ mb: 3, fontWeight: "bold" }}
+                sx={{ my: 3, fontWeight: "bold" }}
               />
               <Typography
                 variant="h1"
@@ -430,7 +430,7 @@ const LandingPage = () => {
                   Learn More
                 </Button>
               </Stack>
-              <Box sx={{ mt: 4, display: "flex", gap: 3 }}>
+              <Box sx={{ my: 4, display: "flex", gap: 3 }}>
                 {stats.map((stat, idx) => (
                   <Box key={idx}>
                     <Typography variant="h4" fontWeight="bold" color="primary">

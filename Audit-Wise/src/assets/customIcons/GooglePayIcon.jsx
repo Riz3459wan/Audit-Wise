@@ -7,12 +7,11 @@ const GooglePayIcon = (props) => {
       {...props}
       viewBox="0 0 48 48"
       sx={{
-        width: props.width || 48,
-        height: props.height || 48,
+        width: props.width || 40,
+        height: props.height || 40,
         ...props.sx,
       }}
     >
-      {/* G */}
       <path
         fill="#4285F4"
         d="M23.49 12.27c2.64 0 4.84.91 6.64 2.43l4.96-4.96C31.82 6.64 28.01 5 23.49 5 14.72 5 7.36 10.72 4.64 18.64l5.78 4.48C11.86 16.43 17.17 12.27 23.49 12.27z"

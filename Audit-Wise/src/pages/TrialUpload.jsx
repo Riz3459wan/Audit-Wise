@@ -26,8 +26,6 @@ import {
 } from "@mui/material";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import DeleteIcon from "@mui/icons-material/Delete";
-import CloudDoneIcon from "@mui/icons-material/CloudDone";
-import DescriptionIcon from "@mui/icons-material/Description";
 import AnalyticsIcon from "@mui/icons-material/Analytics";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import ErrorIcon from "@mui/icons-material/Error";
@@ -50,6 +48,7 @@ const TrialUpload = () => {
   const [pendingAnalysis, setPendingAnalysis] = useState(null);
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
   const [trialData, setTrialData] = useState(() => {
     const saved = sessionStorage.getItem("trial_analyses");
@@ -83,6 +82,7 @@ const TrialUpload = () => {
     setError("");
     setSnackbarMessage(`${files.length} file(s) added for trial analysis`);
     setSnackbarOpen(true);
+    event.target.value = "";
   };
 
   const processDocumentWithOCR = async (uploadItem, onProgress) => {
@@ -117,7 +117,6 @@ const TrialUpload = () => {
 
       return result;
     } catch (error) {
-      console.error("OCR processing error:", error);
       throw new Error(error.message || "Failed to process document");
     }
   };
@@ -213,7 +212,6 @@ const TrialUpload = () => {
 
       return true;
     } catch (err) {
-      console.error("Processing error:", err);
       setUploads((prev) =>
         prev.map((u) =>
           u.id === uploadItem.id
@@ -270,6 +268,7 @@ const TrialUpload = () => {
       return;
     }
 
+    setIsSaving(true);
     setError("");
     let savedCount = 0;
 
@@ -341,6 +340,8 @@ const TrialUpload = () => {
       }
     } catch (err) {
       setError(`Failed to save: ${err.message}`);
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -409,6 +410,8 @@ const TrialUpload = () => {
           justifyContent: "space-between",
           alignItems: "center",
           mb: 3,
+          flexWrap: "wrap",
+          gap: 2,
         }}
       >
         <Box>
@@ -423,8 +426,15 @@ const TrialUpload = () => {
         {hasAnalysedUploads && (
           <Button
             variant="contained"
-            startIcon={<SaveIcon />}
+            startIcon={
+              isSaving ? (
+                <CircularProgress size={20} sx={{ color: "white" }} />
+              ) : (
+                <SaveIcon />
+              )
+            }
             onClick={handleSaveToAccount}
+            disabled={isSaving}
             sx={{
               background: "linear-gradient(90deg, #10b981, #059669)",
               "&:hover": {
@@ -432,7 +442,7 @@ const TrialUpload = () => {
               },
             }}
           >
-            Save to Account
+            {isSaving ? "Saving..." : "Save to Account"}
           </Button>
         )}
       </Box>
@@ -540,7 +550,6 @@ const TrialUpload = () => {
                     <ListItemText
                       primary={
                         <Box
-                          component="span"
                           sx={{
                             display: "flex",
                             alignItems: "center",

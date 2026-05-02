@@ -46,19 +46,27 @@ export const useAuth = () => {
   }, []);
 
   const logout = useCallback(async () => {
-    if (user) {
-      await dbHelpers.logAudit(user.id, "LOGOUT", {});
+    try {
+      if (user) {
+        await dbHelpers.logAudit(user.id, "LOGOUT", {});
+      }
+    } catch (error) {
+      console.error("Logout audit failed:", error);
+    } finally {
+      tabSession.clear();
+      setUser(null);
+      try {
+        await db.auth.put({
+          id: 1,
+          isLoggedIn: false,
+          userId: null,
+          tabId: null,
+          lastActive: null,
+        });
+      } catch (error) {
+        console.error("Failed to update auth record:", error);
+      }
     }
-
-    tabSession.clear();
-    setUser(null);
-
-    await db.auth.put({
-      id: 1,
-      isLoggedIn: false,
-      userId: null,
-      tabId: null,
-    });
   }, [user]);
 
   const checkAuth = useCallback(async () => {
@@ -66,13 +74,40 @@ export const useAuth = () => {
     const session = tabSession.get();
 
     if (session) {
-      const foundUser = await db.users.get(session.userId);
-      if (foundUser && foundUser.isActive) {
-        setUser(foundUser);
-        tabSession.updateLastActive();
-      } else {
+      try {
+        const foundUser = await db.users.get(session.userId);
+        if (foundUser && foundUser.isActive !== false) {
+          const expiryDate = foundUser.planExpiryDate
+            ? new Date(foundUser.planExpiryDate)
+            : null;
+          const now = new Date();
+
+          if (expiryDate && now > expiryDate && foundUser.plan !== "free") {
+            await db.users.update(session.userId, {
+              plan: "free",
+              planExpiryDate: null,
+              monthlyUploadCount: 0,
+              extraUploads: 0,
+            });
+            foundUser.plan = "free";
+            foundUser.planExpiryDate = null;
+            const updatedSession = { ...session, plan: "free" };
+            tabSession.set(updatedSession);
+          }
+
+          setUser(foundUser);
+          tabSession.updateLastActive();
+        } else {
+          tabSession.clear();
+          setUser(null);
+        }
+      } catch (error) {
+        console.error("Auth check failed:", error);
         tabSession.clear();
+        setUser(null);
       }
+    } else {
+      setUser(null);
     }
     setLoading(false);
   }, []);
@@ -189,6 +224,8 @@ export const useAuth = () => {
           updatedFields: Object.keys(profileData),
         });
 
+        window.dispatchEvent(new CustomEvent("profileUpdated"));
+
         return { success: true };
       } catch (error) {
         console.error("Failed to update profile:", error);
@@ -208,6 +245,13 @@ export const useAuth = () => {
         const dbUser = await db.users.get(user.id);
         if (dbUser.password !== currentPassword) {
           return { success: false, error: "Current password is incorrect" };
+        }
+
+        if (newPassword.length < 6) {
+          return {
+            success: false,
+            error: "Password must be at least 6 characters",
+          };
         }
 
         await db.users.update(user.id, {

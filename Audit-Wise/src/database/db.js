@@ -48,35 +48,39 @@ db.version(2)
       "++id, userId, extraUploads, purchaseDate, expiryDate, isActive, price",
   })
   .upgrade(async (trans) => {
-    const users = await trans.table("users").toArray();
-    for (const user of users) {
-      if (!user.extraUploads) {
-        await trans.table("users").update(user.id, { extraUploads: 0 });
-      }
-      if (!user.planExpiryDate && user.plan !== "free") {
-        const expiryDate = new Date();
-        expiryDate.setDate(expiryDate.getDate() + 30);
-        await trans
-          .table("users")
-          .update(user.id, { planExpiryDate: expiryDate.toISOString() });
-      }
-      if (!user.fullName) {
-        await trans.table("users").update(user.id, {
-          fullName: user.name || "",
-          phone: user.phone || "",
-          company: user.company || "",
-          position: user.position || "",
-          location: user.location || "",
-          bio: user.bio || "",
-          avatar: user.avatar || null,
-          securitySettings: user.securitySettings || {
+    try {
+      const users = await trans.table("users").toArray();
+      for (const user of users) {
+        const updates = {};
+        if (user.extraUploads === undefined) {
+          updates.extraUploads = 0;
+        }
+        if (!user.planExpiryDate && user.plan !== "free" && user.plan) {
+          const expiryDate = new Date();
+          expiryDate.setDate(expiryDate.getDate() + 30);
+          updates.planExpiryDate = expiryDate.toISOString();
+        }
+        if (!user.fullName) {
+          updates.fullName = user.name || "";
+          updates.phone = user.phone || "";
+          updates.company = user.company || "";
+          updates.position = user.position || "";
+          updates.location = user.location || "";
+          updates.bio = user.bio || "";
+          updates.avatar = user.avatar || null;
+          updates.securitySettings = user.securitySettings || {
             twoFactorAuth: false,
             sessionTimeout: "30",
             loginAlerts: true,
-          },
-          updatedAt: new Date().toISOString(),
-        });
+          };
+          updates.updatedAt = new Date().toISOString();
+        }
+        if (Object.keys(updates).length > 0) {
+          await trans.table("users").update(user.id, updates);
+        }
       }
+    } catch (error) {
+      console.error("Database upgrade failed:", error);
     }
   });
 
@@ -112,10 +116,12 @@ export const dbHelpers = {
   },
 
   async getUserByEmail(email) {
-    return await db.users.where("email").equals(email).first();
+    if (!email) return null;
+    return await db.users.where("email").equals(email.toLowerCase()).first();
   },
 
   async checkAndResetMonthlyCount(userId) {
+    if (!userId) return 0;
     const user = await db.users.get(userId);
     if (!user) return 0;
 
@@ -155,6 +161,16 @@ export const dbHelpers = {
   },
 
   async getUserMonthlyUsage(userId) {
+    if (!userId)
+      return {
+        used: 0,
+        total: 5,
+        remaining: 5,
+        plan: "free",
+        baseLimit: 5,
+        extraUploads: 0,
+      };
+
     await this.checkAndResetMonthlyCount(userId);
     const user = await db.users.get(userId);
     const currentCount = user?.monthlyUploadCount || 0;
@@ -175,12 +191,14 @@ export const dbHelpers = {
   },
 
   async getCurrentMonthUploadCount(userId) {
+    if (!userId) return 0;
     await this.checkAndResetMonthlyCount(userId);
     const user = await db.users.get(userId);
     return user?.monthlyUploadCount || 0;
   },
 
   async incrementMonthlyUploadCount(userId) {
+    if (!userId) return 0;
     const user = await db.users.get(userId);
     if (user) {
       const currentCount = user.monthlyUploadCount || 0;
@@ -192,6 +210,8 @@ export const dbHelpers = {
   },
 
   async saveDocument(userId, documentData) {
+    if (!userId) throw new Error("User ID required");
+
     const usage = await this.getUserMonthlyUsage(userId);
 
     if (usage.used >= usage.total) {
@@ -219,6 +239,9 @@ export const dbHelpers = {
   },
 
   async saveAnalyseResult(documentId, userId, analyseData) {
+    if (!documentId || !userId)
+      throw new Error("Document ID and User ID required");
+
     const id = await db.analyseResult.add({
       documentId,
       userId,
@@ -235,6 +258,7 @@ export const dbHelpers = {
   },
 
   async getAnalyseResultByDocumentId(documentId) {
+    if (!documentId) return null;
     return await db.analyseResult
       .where("documentId")
       .equals(documentId)
@@ -242,6 +266,7 @@ export const dbHelpers = {
   },
 
   async getAllAnalyseResults(userId) {
+    if (!userId) return [];
     return await db.analyseResult
       .where("userId")
       .equals(userId)
@@ -250,6 +275,8 @@ export const dbHelpers = {
   },
 
   async saveReport(userId, documentId, reportData) {
+    if (!userId) throw new Error("User ID required");
+
     const id = await db.reports.add({
       userId,
       documentId,
@@ -261,6 +288,7 @@ export const dbHelpers = {
   },
 
   async logAudit(userId, action, details = {}) {
+    if (!userId) return;
     await db.auditLogs.add({
       userId,
       action,
@@ -271,6 +299,8 @@ export const dbHelpers = {
   },
 
   async getUserStats(userId) {
+    if (!userId) return { totalDocs: 0, totalReports: 0, recentActivity: [] };
+
     const [totalDocs, totalReports, recentActivity] = await Promise.all([
       db.documents.where("userId").equals(userId).count(),
       db.reports.where("userId").equals(userId).count(),
@@ -280,10 +310,12 @@ export const dbHelpers = {
   },
 
   async getDocumentCount(userId) {
+    if (!userId) return 0;
     return await db.documents.where("userId").equals(userId).count();
   },
 
   async forceResetMonthlyCount(userId) {
+    if (!userId) return 0;
     const now = new Date();
     const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     await db.users.update(userId, {
@@ -294,6 +326,8 @@ export const dbHelpers = {
   },
 
   async addExtraUploads(userId, extraCount, price) {
+    if (!userId) throw new Error("User ID required");
+
     const user = await db.users.get(userId);
     if (!user) throw new Error("User not found");
 

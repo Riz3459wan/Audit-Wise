@@ -24,13 +24,31 @@ const PrivateRoute = ({ children }) => {
       setIsAuth(tabSession.isActive());
     };
     checkAuth();
+    const interval = setInterval(() => {
+      if (tabSession.isActive()) {
+        tabSession.updateLastActive();
+      }
+    }, 60000);
+    return () => clearInterval(interval);
   }, []);
 
   if (isAuth === null) {
-    return <div>Loading...</div>;
+    return (
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          height: "100vh",
+          background: "linear-gradient(135deg, #6366f1, #38bdf8)",
+        }}
+      >
+        <div style={{ color: "white", fontSize: "1.2rem" }}>Loading...</div>
+      </div>
+    );
   }
 
-  return isAuth ? children : <Navigate to="/" />;
+  return isAuth ? children : <Navigate to="/" replace />;
 };
 
 const ProtectedLayout = () => {
@@ -66,7 +84,7 @@ function App() {
           <Route path="/profileSetting" element={<ProfileSettings />} />
         </Route>
 
-        <Route path="*" element={<Navigate to="/" />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   );

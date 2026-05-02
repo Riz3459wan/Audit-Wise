@@ -1,5 +1,5 @@
-import React from 'react';
-import { SvgIcon } from '@mui/material';
+import React from "react";
+import { SvgIcon } from "@mui/material";
 
 const PaytmIcon = (props) => {
   return (
@@ -7,9 +7,9 @@ const PaytmIcon = (props) => {
       {...props}
       viewBox="0 0 122.88 38.52"
       sx={{
-        width: props.width || 50,
-        height: props.height || 50,
-        ...props.sx
+        width: props.width || 40,
+        height: props.height || 40,
+        ...props.sx,
       }}
     >
       <g>

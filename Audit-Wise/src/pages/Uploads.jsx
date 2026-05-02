@@ -700,8 +700,8 @@ const Uploads = () => {
               tabIndex={isLimitReached ? -1 : 0}
               aria-label="Upload files"
               onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  if (!isLimitReached) fileInputRef.current?.click();
+                if ((e.key === "Enter" || e.key === " ") && !isLimitReached) {
+                  fileInputRef.current?.click();
                 }
               }}
               sx={{
