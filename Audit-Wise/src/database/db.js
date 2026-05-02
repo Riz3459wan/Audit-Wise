@@ -75,6 +75,11 @@ db.version(2)
           };
           updates.updatedAt = new Date().toISOString();
         }
+        if (user.password && !user.password.startsWith("$2")) {
+          const bcrypt = await import("bcryptjs");
+          const salt = await bcrypt.genSalt(10);
+          updates.password = await bcrypt.hash(user.password, salt);
+        }
         if (Object.keys(updates).length > 0) {
           await trans.table("users").update(user.id, updates);
         }

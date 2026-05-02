@@ -7,9 +7,15 @@ import {
   Paper,
   CircularProgress,
   Alert,
+  InputAdornment,
+  IconButton,
 } from "@mui/material";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
+import VisibilityIcon from "@mui/icons-material/Visibility";
+import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
+import EmailIcon from "@mui/icons-material/Email";
+import LockIcon from "@mui/icons-material/Lock";
 
 const Login = () => {
   const navigate = useNavigate();
@@ -21,6 +27,7 @@ const Login = () => {
   });
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     const pendingData = sessionStorage.getItem("pendingTrialData");
@@ -93,6 +100,10 @@ const Login = () => {
     }
   };
 
+  const toggleShowPassword = () => {
+    setShowPassword(!showPassword);
+  };
+
   if (authLoading) {
     return (
       <Box
@@ -157,12 +168,19 @@ const Login = () => {
           onKeyDown={handleKeyDown}
           disabled={isLoading}
           error={!!error && !form.email}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <EmailIcon sx={{ color: "#6366f1" }} />
+              </InputAdornment>
+            ),
+          }}
         />
 
         <TextField
           fullWidth
           label="Password"
-          type="password"
+          type={showPassword ? "text" : "password"}
           name="password"
           margin="normal"
           value={form.password}
@@ -170,6 +188,24 @@ const Login = () => {
           onKeyDown={handleKeyDown}
           disabled={isLoading}
           error={!!error && !form.password}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <LockIcon sx={{ color: "#6366f1" }} />
+              </InputAdornment>
+            ),
+            endAdornment: (
+              <InputAdornment position="end">
+                <IconButton
+                  onClick={toggleShowPassword}
+                  edge="end"
+                  disabled={isLoading}
+                >
+                  {showPassword ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                </IconButton>
+              </InputAdornment>
+            ),
+          }}
         />
 
         <Button

@@ -17,6 +17,7 @@ import EmailIcon from "@mui/icons-material/Email";
 import LockIcon from "@mui/icons-material/Lock";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
+import bcrypt from "bcryptjs";
 
 const Register = () => {
   const navigate = useNavigate();
@@ -83,13 +84,16 @@ const Register = () => {
         return;
       }
 
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(form.password, salt);
+
       const now = new Date();
       const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
       await db.users.add({
         name: form.name.trim(),
         email: form.email.toLowerCase(),
-        password: form.password,
+        password: hashedPassword,
         plan: "free",
         createdAt: now.toISOString(),
         isActive: true,

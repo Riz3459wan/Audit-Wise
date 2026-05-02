@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { db, dbHelpers, PLAN_LIMITS } from "../database/db";
 import { tabSession } from "../utils/tabSession";
+import bcrypt from "bcryptjs";
 
 export const useAuth = () => {
   const [user, setUser] = useState(null);
@@ -10,34 +11,43 @@ export const useAuth = () => {
     try {
       const foundUser = await dbHelpers.getUserByEmail(email);
 
-      if (foundUser && foundUser.password === password) {
-        const sessionData = {
-          userId: foundUser.id,
-          email: foundUser.email,
-          name: foundUser.name,
-          loggedInAt: Date.now(),
-          tabId: crypto.randomUUID(),
-          plan: foundUser.plan,
-        };
-        tabSession.set(sessionData);
-        setUser(foundUser);
+      if (foundUser) {
+        const isValidPassword = await bcrypt.compare(
+          password,
+          foundUser.password,
+        );
 
-        await db.auth.put({
-          id: 1,
-          isLoggedIn: true,
-          userId: foundUser.id,
-          tabId: sessionData.tabId,
-          lastActive: Date.now(),
-        });
+        if (isValidPassword) {
+          const sessionData = {
+            userId: foundUser.id,
+            email: foundUser.email,
+            name: foundUser.name,
+            loggedInAt: Date.now(),
+            tabId: crypto.randomUUID(),
+            plan: foundUser.plan,
+          };
+          tabSession.set(sessionData);
+          setUser(foundUser);
 
-        await dbHelpers.logAudit(foundUser.id, "LOGIN", { method: "password" });
+          await db.auth.put({
+            id: 1,
+            isLoggedIn: true,
+            userId: foundUser.id,
+            tabId: sessionData.tabId,
+            lastActive: Date.now(),
+          });
 
-        const pendingTrialData = sessionStorage.getItem("pendingTrialData");
-        if (pendingTrialData) {
-          return { success: true, hasPendingTrialData: true };
+          await dbHelpers.logAudit(foundUser.id, "LOGIN", {
+            method: "password",
+          });
+
+          const pendingTrialData = sessionStorage.getItem("pendingTrialData");
+          if (pendingTrialData) {
+            return { success: true, hasPendingTrialData: true };
+          }
+
+          return { success: true };
         }
-
-        return { success: true };
       }
       return { success: false, error: "Invalid credentials" };
     } catch (error) {
@@ -243,7 +253,12 @@ export const useAuth = () => {
 
       try {
         const dbUser = await db.users.get(user.id);
-        if (dbUser.password !== currentPassword) {
+        const isValidPassword = await bcrypt.compare(
+          currentPassword,
+          dbUser.password,
+        );
+
+        if (!isValidPassword) {
           return { success: false, error: "Current password is incorrect" };
         }
 
@@ -254,8 +269,11 @@ export const useAuth = () => {
           };
         }
 
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(newPassword, salt);
+
         await db.users.update(user.id, {
-          password: newPassword,
+          password: hashedPassword,
           passwordUpdatedAt: new Date().toISOString(),
         });
 
