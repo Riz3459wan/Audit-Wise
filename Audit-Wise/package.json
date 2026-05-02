@@ -14,6 +14,7 @@
     "@huggingface/inference": "^4.13.15",
     "@mui/icons-material": "^5.15.20",
     "@mui/material": "^5.15.20",
+    "bcryptjs": "^3.0.3",
     "dexie": "^4.0.8",
     "mammoth": "^1.6.0",
     "pdfjs-dist": "^4.10.38",

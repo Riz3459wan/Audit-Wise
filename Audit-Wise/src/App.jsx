@@ -16,20 +16,62 @@ import PaymentSuccess from "./pages/PaymentSuccess";
 import { tabSession } from "./utils/tabSession";
 import Layout from "./components/layout/Layout";
 
+const SESSION_TIMEOUT = 30 * 60 * 1000;
+
 const PrivateRoute = ({ children }) => {
   const [isAuth, setIsAuth] = useState(null);
 
   useEffect(() => {
     const checkAuth = () => {
-      setIsAuth(tabSession.isActive());
+      const session = tabSession.get();
+      if (session && session.lastActive) {
+        const now = Date.now();
+        if (now - session.lastActive > SESSION_TIMEOUT) {
+          tabSession.clear();
+          setIsAuth(false);
+        } else {
+          setIsAuth(true);
+          tabSession.updateLastActive();
+        }
+      } else {
+        setIsAuth(!!session);
+      }
     };
+
     checkAuth();
+
     const interval = setInterval(() => {
+      if (tabSession.isActive()) {
+        const session = tabSession.get();
+        if (session && session.lastActive) {
+          const now = Date.now();
+          if (now - session.lastActive > SESSION_TIMEOUT) {
+            tabSession.clear();
+            setIsAuth(false);
+            window.location.href = "/login";
+          } else {
+            tabSession.updateLastActive();
+          }
+        }
+      }
+    }, 60000);
+
+    const activityHandler = () => {
       if (tabSession.isActive()) {
         tabSession.updateLastActive();
       }
-    }, 60000);
-    return () => clearInterval(interval);
+    };
+
+    window.addEventListener("mousemove", activityHandler);
+    window.addEventListener("keydown", activityHandler);
+    window.addEventListener("click", activityHandler);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("mousemove", activityHandler);
+      window.removeEventListener("keydown", activityHandler);
+      window.removeEventListener("click", activityHandler);
+    };
   }, []);
 
   if (isAuth === null) {
